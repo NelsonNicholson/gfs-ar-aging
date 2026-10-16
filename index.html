@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>AR Aging Dashboard</title>
+<style>
+:root{
+  --bg:#f5f6f8;--surface:#fff;--surface-2:#f0f2f5;--border:#e2e5ea;--text:#1b1f24;--muted:#5d6670;
+  --accent:#0b6e8a;--accent-soft:#e3f1f5;
+  --b0:#2e8b57;--b1:#c9a227;--b2:#e07b39;--b3:#d24c3f;--b4:#8e2430;--credit:#5d6670;
+  --shadow:0 1px 2px rgba(0,0,0,.05),0 2px 8px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#111418;--surface:#1a1e23;--surface-2:#22272e;--border:#2f353d;--text:#e6e9ed;--muted:#9aa3ad;
+  --accent:#4fb3cf;--accent-soft:#16323b;
+  --b0:#4cb27a;--b1:#d9b443;--b2:#ee9258;--b3:#ea6a5c;--b4:#c4505d;--credit:#9aa3ad;
+  --shadow:none;}}
+:root[data-theme="dark"]{
+  --bg:#111418;--surface:#1a1e23;--surface-2:#22272e;--border:#2f353d;--text:#e6e9ed;--muted:#9aa3ad;
+  --accent:#4fb3cf;--accent-soft:#16323b;
+  --b0:#4cb27a;--b1:#d9b443;--b2:#ee9258;--b3:#ea6a5c;--b4:#c4505d;--credit:#9aa3ad;--shadow:none;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+button,input,select{font:inherit;color:inherit}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
+/* lock screen */
+#lock{min-height:100vh;display:grid;place-items:center;padding:16px}
+.lockcard{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:28px;width:100%;max-width:380px;box-shadow:var(--shadow)}
+.lockcard h1{font-size:20px;margin:0 0 4px}.lockcard p{color:var(--muted);margin:0 0 18px}
+.field{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surface-2)}
+.field:focus{outline:2px solid var(--accent);outline-offset:1px}
+.btn{border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:8px 12px;cursor:pointer}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;width:100%;padding:10px;margin-top:12px}
+.err{color:var(--b3);min-height:20px;margin-top:8px;font-size:13px}
+label.chk{display:flex;gap:8px;align-items:center;color:var(--muted);font-size:13px;margin-top:12px}
+/* header */
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:space-between;margin-bottom:18px}
+header h1{font-size:22px;margin:0}
+.sub{color:var(--muted);font-size:13px}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg button{border:0;background:none;padding:7px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.banner{border:1px solid var(--b1);background:color-mix(in srgb,var(--b1) 12%,transparent);border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:13px}
+.banner.bad{border-color:var(--b3);background:color-mix(in srgb,var(--b3) 12%,transparent)}
+/* cards */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;box-shadow:var(--shadow)}
+.kpi .label{color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.kpi .value{font-size:24px;font-weight:650;margin-top:4px;font-variant-numeric:tabular-nums}
+.kpi .note{color:var(--muted);font-size:12px;margin-top:2px}
+.panel{margin-bottom:16px}
+.panel h2{font-size:15px;margin:0 0 12px}
+.bar{display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--surface-2);gap:2px}
+.bar span{display:block;height:100%;min-width:2px}
+.buckets{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:14px}
+@media (max-width:720px){.buckets{grid-template-columns:repeat(2,1fr)}}
+.bucket{border:1px solid var(--border);border-radius:10px;padding:10px 12px;cursor:pointer;background:var(--surface);text-align:left}
+.bucket:hover{background:var(--surface-2)}
+.bucket[aria-pressed="true"]{outline:2px solid var(--accent)}
+.bucket .sw{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.bucket .bl{font-size:12px;color:var(--muted)}
+.bucket .bv{font-size:17px;font-weight:620;margin-top:2px;font-variant-numeric:tabular-nums}
+.bucket .bp{font-size:12px;color:var(--muted)}
+/* table */
+.tablehead{display:flex;flex-wrap:wrap;gap:8px;justify-content:space-between;align-items:center;margin-bottom:10px}
+.search{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);min-width:240px;flex:1;max-width:340px}
+.tscroll{overflow-x:auto;border:1px solid var(--border);border-radius:10px}
+table{border-collapse:collapse;width:100%;min-width:820px;background:var(--surface)}
+th,td{padding:8px 12px;border-bottom:1px solid var(--border)}
+th{position:sticky;top:0;background:var(--surface-2);font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em;cursor:pointer;user-select:none;text-align:left}
+th.num{text-align:right}
+th[aria-sort]::after{content:" ▾";opacity:.7}th[aria-sort="ascending"]::after{content:" ▴"}
+tbody tr.cust{cursor:pointer}tbody tr.cust:hover{background:var(--surface-2)}
+tbody tr.cust td:first-child::before{content:"▸";display:inline-block;width:14px;color:var(--muted);transition:transform .15s}
+tbody tr.cust.open td:first-child::before{transform:rotate(90deg)}
+tr.detail>td{background:var(--surface-2);padding:0}
+.inner{padding:8px 12px 12px 26px}
+.inner table{min-width:0;background:transparent}
+.inner th{background:transparent;position:static;cursor:default}
+.inner td,.inner th{padding:5px 8px;font-size:13px}
+tfoot td{font-weight:650;background:var(--surface-2)}
+.cid{color:var(--muted);font-size:12px;margin-left:6px}
+.neg{color:var(--credit)}
+.zero{color:var(--muted);opacity:.5}
+.pill{font-size:11px;padding:1px 6px;border-radius:99px;background:var(--surface);border:1px solid var(--border);color:var(--muted)}
+footer{color:var(--muted);font-size:12px;margin-top:18px;display:flex;flex-wrap:wrap;gap:6px 18px}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<div id="lock">
+  <form class="lockcard" id="lockForm" autocomplete="off">
+    <h1>AR Aging Dashboard</h1>
+    <p>Enter the dashboard passphrase to unlock.</p>
+    <input class="field" id="pw" type="password" placeholder="Passphrase" autofocus aria-label="Passphrase">
+    <label class="chk"><input type="checkbox" id="remember"> Remember on this device</label>
+    <button class="btn primary" type="submit" id="unlockBtn">Unlock</button>
+    <div class="err" id="err" role="alert"></div>
+  </form>
+</div>
+
+<div id="app" class="hidden">
+  <div class="wrap">
+    <header>
+      <div>
+        <h1 id="title">AR Aging</h1>
+        <div class="sub" id="asof"></div>
+      </div>
+      <div class="toolbar">
+        <div class="seg" role="group" aria-label="Age by">
+          <button data-mode="due" aria-pressed="true">By due date</button>
+          <button data-mode="inv" aria-pressed="false">By invoice date</button>
+        </div>
+        <button class="btn" id="csvBtn">Export CSV</button>
+        <button class="btn" id="lockBtn">Lock</button>
+      </div>
+    </header>
+
+    <div id="banners"></div>
+
+    <section class="kpis" id="kpis"></section>
+
+    <section class="card panel">
+      <h2>Aging distribution</h2>
+      <div class="bar" id="bar"></div>
+      <div class="buckets" id="buckets"></div>
+    </section>
+
+    <section class="card panel">
+      <div class="tablehead">
+        <h2 style="margin:0">Customers <span class="sub" id="custCount"></span></h2>
+        <input class="search" id="search" type="search" placeholder="Search customer, ID or invoice #">
+      </div>
+      <div class="tscroll">
+        <table id="tbl">
+          <thead><tr id="thead"></tr></thead>
+          <tbody id="tbody"></tbody>
+          <tfoot id="tfoot"></tfoot>
+        </table>
+      </div>
+    </section>
+
+    <footer id="foot"></footer>
+  </div>
+</div>
+
+<script>
+(() => {
+  const DATA_URL = "data.enc.json";
+  const LS_KEY = "arAging.pw";
+  const STALE_HOURS = 26;
+  const $ = s => document.querySelector(s);
+  const fmt = new Intl.NumberFormat("en-US", {style:"currency", currency:"USD"});
+  const fmt0 = new Intl.NumberFormat("en-US", {style:"currency", currency:"USD", maximumFractionDigits:0});
+  const money = v => Math.abs(v) < 0.005 ? "–" : fmt.format(v);
+  const pct = (a, b) => b ? (a / b * 100).toFixed(1) + "%" : "0%";
+  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+
+  const MODES = {
+    due: {labels:["Current","1–30 past due","31–60 past due","61–90 past due","Over 90 past due"], short:["Current","1–30","31–60","61–90","90+"], edges:[0,30,60,90]},
+    inv: {labels:["0–30 days old","31–60 days old","61–90 days old","91–120 days old","Over 120 days old"], short:["0–30","31–60","61–90","91–120","120+"], edges:[30,60,90,120]},
+  };
+  const COLORS = ["var(--b0)","var(--b1)","var(--b2)","var(--b3)","var(--b4)"];
+  const TYPE = {inv:"Invoice", cm:"Credit memo", op:"Overpayment", adv:"Advance"};
+
+  let snap = null, mode = "due", bucketFilter = null, query = "", sortKey = "total", sortDir = -1;
+  const openRows = new Set();
+
+  // ---------- crypto ----------
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  async function decrypt(env, password) {
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey({name:"PBKDF2", hash:"SHA-256", salt:b64(env.salt), iterations:env.iter},
+      base, {name:"AES-GCM", length:256}, false, ["decrypt"]);
+    const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:b64(env.iv)}, key, b64(env.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }
+  async function unlock(password, remember) {
+    $("#err").textContent = ""; $("#unlockBtn").disabled = true; $("#unlockBtn").textContent = "Unlocking…";
+    try {
+      const res = await fetch(DATA_URL + "?t=" + Date.now(), {cache:"no-store"});
+      if (!res.ok) throw new Error("fetch");
+      const env = await res.json();
+      try { snap = await decrypt(env, password); }
+      catch { throw new Error("pw"); }
+      try {
+        if (remember) localStorage.setItem(LS_KEY, password); else localStorage.removeItem(LS_KEY);
+        sessionStorage.setItem(LS_KEY, password);
+      } catch {}
+      $("#lock").classList.add("hidden"); $("#app").classList.remove("hidden");
+      render();
+    } catch (e) {
+      $("#err").textContent = e.message === "pw" ? "That passphrase didn't work." : "Couldn't load the data file. Try again in a minute.";
+      try { localStorage.removeItem(LS_KEY); sessionStorage.removeItem(LS_KEY); } catch {}
+    } finally {
+      $("#unlockBtn").disabled = false; $("#unlockBtn").textContent = "Unlock";
+    }
+  }
+
+  // ---------- aging ----------
+  const DAY = 86400000;
+  const toDay = s => { const [y,m,d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
+  function ageOf(item) {
+    const ref = mode === "due" ? (item.due || item.d) : (item.d || item.due);
+    return Math.round((toDay(snap.asOf) - toDay(ref)) / DAY);
+  }
+  function bucketOf(age) {
+    const e = MODES[mode].edges;
+    if (mode === "due") return age <= e[0] ? 0 : age <= e[1] ? 1 : age <= e[2] ? 2 : age <= e[3] ? 3 : 4;
+    return age <= e[0] ? 0 : age <= e[1] ? 1 : age <= e[2] ? 2 : age <= e[3] ? 3 : 4;
+  }
+  function compute() {
+    const custs = new Map(), totals = [0,0,0,0,0];
+    let credits = 0;
+    for (const it of snap.items) {
+      const age = ageOf(it), b = bucketOf(age);
+      totals[b] += it.bal;
+      if (it.t === "op" || it.t === "adv") credits += it.bal;
+      let c = custs.get(it.c);
+      if (!c) { c = {id:it.c, name:it.cn || it.c, b:[0,0,0,0,0], total:0, items:[], oldest:0}; custs.set(it.c, c); }
+      c.b[b] += it.bal; c.total += it.bal; c.items.push({...it, age, bucket:b});
+      if (it.bal > 0) c.oldest = Math.max(c.oldest, age);
+    }
+    const total = totals.reduce((a, v) => a + v, 0);
+    return {custs:[...custs.values()].filter(c => Math.abs(c.total) >= 0.005 || c.items.length), totals, total, credits};
+  }
+
+  // ---------- render ----------
+  function render() {
+    const M = MODES[mode];
+    const {custs, totals, total, credits} = compute();
+    const gen = new Date(snap.generatedAt);
+    $("#title").textContent = `${snap.company} · AR Aging`;
+    document.title = `AR Aging · ${snap.company}`;
+    $("#asof").textContent = `Data as of ${gen.toLocaleString("en-US", {dateStyle:"medium", timeStyle:"short", timeZone:snap.tz})} CT · refreshes automatically`;
+
+    const banners = [];
+    if (snap.sample) banners.push(`<div class="banner">Sample data. This isn't from Sage. It'll be replaced on the first scheduled refresh.</div>`);
+    if ((Date.now() - gen.getTime()) / 36e5 > STALE_HOURS) banners.push(`<div class="banner bad">This data is more than ${STALE_HOURS} hours old. The refresh job may have failed; check the Actions tab in GitHub.</div>`);
+    if (snap.check && !snap.check.ties) banners.push(`<div class="banner bad">Open items (${fmt.format(snap.total)}) don't tie to Sage customer balances (${fmt.format(snap.check.customerBalances)}).</div>`);
+    $("#banners").innerHTML = banners.join("");
+
+    const pastDue = mode === "due" ? totals[1] + totals[2] + totals[3] + totals[4] : null;
+    const over90 = mode === "due" ? totals[4] : totals[3] + totals[4];
+    const custWithBal = custs.filter(c => c.total > 0.005).length;
+    const kpis = [
+      ["Total open AR", fmt0.format(total), `${custWithBal} customers with a balance`],
+      mode === "due" ? ["Current", fmt0.format(totals[0]), pct(totals[0], total) + " of total"] : ["0–30 days old", fmt0.format(totals[0]), pct(totals[0], total) + " of total"],
+      mode === "due" ? ["Past due", fmt0.format(pastDue), pct(pastDue, total) + " of total"] : ["Over 30 days old", fmt0.format(total - totals[0]), pct(total - totals[0], total) + " of total"],
+      [mode === "due" ? "Over 90 past due" : "Over 90 days old", fmt0.format(over90), pct(over90, total) + " of total"],
+      ["Unapplied credits", fmt0.format(credits), "Overpayments & advances (in totals)"],
+    ];
+    $("#kpis").innerHTML = kpis.map(([l, v, n]) => `<div class="card kpi"><div class="label">${l}</div><div class="value">${v}</div><div class="note">${n}</div></div>`).join("");
+
+    const posTotal = totals.reduce((a, v) => a + Math.max(v, 0), 0) || 1;
+    $("#bar").innerHTML = totals.map((v, i) => v > 0 ? `<span title="${M.labels[i]}: ${fmt.format(v)}" style="flex:${v / posTotal};background:${COLORS[i]}"></span>` : "").join("");
+    $("#buckets").innerHTML = totals.map((v, i) => `
+      <button class="bucket" data-b="${i}" aria-pressed="${bucketFilter === i}">
+        <div class="bl"><span class="sw" style="background:${COLORS[i]}"></span>${M.labels[i]}</div>
+        <div class="bv">${fmt0.format(v)}</div><div class="bp">${pct(v, total)}</div>
+      </button>`).join("");
+
+    // table
+    const cols = [["name","Customer",false], ...M.short.map((s, i) => ["b" + i, s, true]), ["total","Total",true], ["oldest", mode === "due" ? "Max days late" : "Oldest (days)", true]];
+    $("#thead").innerHTML = cols.map(([k, l, n]) => `<th data-k="${k}" class="${n ? "num" : ""}" ${sortKey === k ? `aria-sort="${sortDir > 0 ? "ascending" : "descending"}"` : ""}>${l}</th>`).join("");
+
+    const q = query.trim().toLowerCase();
+    let rows = custs.filter(c => {
+      if (bucketFilter !== null && Math.abs(c.b[bucketFilter]) < 0.005) return false;
+      if (!q) return true;
+      return c.name.toLowerCase().includes(q) || String(c.id).toLowerCase().includes(q) || c.items.some(i => String(i.n).toLowerCase().includes(q) || String(i.ref).toLowerCase().includes(q));
+    });
+    const val = (c, k) => k === "name" ? c.name.toLowerCase() : k === "total" ? c.total : k === "oldest" ? c.oldest : c.b[+k.slice(1)];
+    rows.sort((a, b) => { const x = val(a, sortKey), y = val(b, sortKey); return (x < y ? -1 : x > y ? 1 : 0) * sortDir; });
+    $("#custCount").textContent = `· ${rows.length} shown`;
+
+    const cell = v => `<td class="num ${v < -0.004 ? "neg" : Math.abs(v) < 0.005 ? "zero" : ""}">${money(v)}</td>`;
+    $("#tbody").innerHTML = rows.map(c => {
+      const open = openRows.has(c.id);
+      let html = `<tr class="cust ${open ? "open" : ""}" data-id="${esc(c.id)}"><td>${esc(c.name)}<span class="cid">${esc(c.id)}</span></td>${c.b.map(cell).join("")}${cell(c.total)}<td class="num">${c.oldest > 0 ? c.oldest : "–"}</td></tr>`;
+      if (open) {
+        const its = [...c.items].sort((a, b) => b.age - a.age);
+        html += `<tr class="detail"><td colspan="${cols.length}"><div class="inner"><table>
+          <thead><tr><th>Document</th><th>Type</th><th>Reference</th><th>Date</th><th>Due</th><th class="num">${mode === "due" ? "Days late" : "Age"}</th><th class="num">Original</th><th class="num">Open</th></tr></thead>
+          <tbody>${its.map(i => `<tr><td>${esc(i.n)}</td><td><span class="pill">${TYPE[i.t] || i.t}</span></td><td>${esc(i.ref)}</td><td>${esc(i.d)}</td><td>${esc(i.due)}</td><td class="num">${mode === "due" && i.age <= 0 ? `<span class="zero" style="opacity:1">${i.age === 0 ? "due today" : "due in " + -i.age + "d"}</span>` : i.age}</td><td class="num">${money(i.amt)}</td><td class="num ${i.bal < 0 ? "neg" : ""}">${money(i.bal)}</td></tr>`).join("")}</tbody>
+        </table></div></td></tr>`;
+      }
+      return html;
+    }).join("") || `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--muted);padding:24px">No customers match.</td></tr>`;
+
+    const ft = [0,0,0,0,0]; let ftt = 0;
+    rows.forEach(c => { c.b.forEach((v, i) => ft[i] += v); ftt += c.total; });
+    $("#tfoot").innerHTML = `<tr><td>Total${rows.length !== custs.length ? " (filtered)" : ""}</td>${ft.map(cell).join("")}${cell(ftt)}<td></td></tr>`;
+
+    $("#foot").innerHTML = `<span>Source: Sage Intacct — open AR invoices, credit memos, unapplied overpayments and advances (base currency).</span>
+      ${snap.check ? `<span>${snap.check.ties ? "✓ Ties" : "✗ Does not tie"} to Sage customer balances (${fmt.format(snap.check.customerBalances)}).</span>` : ""}
+      <span>Aged ${mode === "due" ? "by due date" : "by invoice date"} as of ${snap.asOf}. Credits are aged by their receipt date.</span>`;
+  }
+
+  function exportCsv() {
+    const M = MODES[mode], {custs} = compute();
+    const lines = [["Customer ID","Customer", ...M.short, "Total"].join(",")];
+    const q = s => `"${String(s).replace(/"/g, '""')}"`;
+    custs.sort((a, b) => b.total - a.total).forEach(c => lines.push([q(c.id), q(c.name), ...c.b.map(v => v.toFixed(2)), c.total.toFixed(2)].join(",")));
+    const blob = new Blob([lines.join("\n")], {type:"text/csv"});
+    const a = Object.assign(document.createElement("a"), {href:URL.createObjectURL(blob), download:`ar-aging-${snap.asOf}-${mode}.csv`});
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  // ---------- events ----------
+  $("#lockForm").addEventListener("submit", e => { e.preventDefault(); const pw = $("#pw").value; if (pw) unlock(pw, $("#remember").checked); });
+  $("#lockBtn").addEventListener("click", () => {
+    try { localStorage.removeItem(LS_KEY); sessionStorage.removeItem(LS_KEY); } catch {}
+    snap = null; $("#pw").value = ""; $("#app").classList.add("hidden"); $("#lock").classList.remove("hidden");
+  });
+  $("#csvBtn").addEventListener("click", exportCsv);
+  document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => {
+    mode = b.dataset.mode; bucketFilter = null;
+    document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    render();
+  }));
+  $("#buckets").addEventListener("click", e => { const b = e.target.closest(".bucket"); if (!b) return; const i = +b.dataset.b; bucketFilter = bucketFilter === i ? null : i; render(); });
+  $("#search").addEventListener("input", e => { query = e.target.value; render(); });
+  $("#thead").addEventListener("click", e => { const th = e.target.closest("th"); if (!th) return; const k = th.dataset.k; if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = k === "name" ? 1 : -1; } render(); });
+  $("#tbody").addEventListener("click", e => { const tr = e.target.closest("tr.cust"); if (!tr) return; const id = tr.dataset.id; openRows.has(id) ? openRows.delete(id) : openRows.add(id); render(); });
+
+  // auto-unlock from saved passphrase
+  let saved = null;
+  try { saved = sessionStorage.getItem(LS_KEY) || localStorage.getItem(LS_KEY); } catch {}
+  if (saved) { $("#remember").checked = (() => { try { return !!localStorage.getItem(LS_KEY); } catch { return false; } })(); unlock(saved, $("#remember").checked); }
+})();
+</script>
+</body>
+</html>

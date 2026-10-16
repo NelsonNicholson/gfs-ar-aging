@@ -1,0 +1,6 @@
+# Never commit data — it's generated and deployed by the workflow
+site/data.enc.json
+*.plain.json
+snapshot.json
+__pycache__/
+.env
