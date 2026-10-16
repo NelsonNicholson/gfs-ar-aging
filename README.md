@@ -4,6 +4,8 @@
 
 The dashboard has three views: **Entire company**, **Division G1** and **Division G2**. Click any customer to open a panel showing their open invoices and the date and amount of their last payment.
 
+**Customer statements:** in a customer's panel, **Download PDF** builds that customer's statement in the browser. G1 customers get the GFS Logistics template and G2 customers get the Texas Cartage Warehouse, LLC template, each with its own logo, address and bank remittance details. Statements list every open item and age it by due date as of the data date. Bill-to addresses come from the customer's default mailing address in Sage. The bank details are stored only inside the encrypted data, never in the public code.
+
 ## How it works
 
 ```
@@ -40,7 +42,9 @@ The G1/G2 assignments come from the customer list provided on Oct 16, 2026 (138 
 | File | Purpose |
 |---|---|
 | `index.html` | Dashboard (no external libraries) |
-| `logo.png` | GFS Logistics logo |
+| `logo.png` | GFS Logistics logo (G1 statements and dashboard) |
+| `tcw-logo.png` | Texas Cartage Warehouse logo (G2 statements) |
+| `jspdf.umd.min.js` | PDF library used to build statements (jsPDF 2.5.1, MIT license) |
 | `fetch_ar.py` | Pulls from Sage, or unlocks the snapshot; assigns divisions; encrypts for viewers |
 | `seed.enc.json` | Encrypted Oct 16 snapshot and division list |
 | `.github/workflows/refresh.yml` | Schedule and deployment |

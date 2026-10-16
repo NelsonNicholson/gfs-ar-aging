@@ -148,6 +148,16 @@ def build_live(bundle, tz):
         names.setdefault(g(r, "id"), g(r, "name"))
     check_total = round(sum(money(g(r, "totalDue")) for r in cust), 2)
 
+    # mailing addresses for statements (customers with open items only)
+    addrs, ids = {}, sorted({x["c"] for x in items})
+    ma = "contacts.default.mailingAddress."
+    for i in range(0, len(ids), 200):
+        for r in s.query("accounts-receivable/customer",
+                         ["id", "contacts.default.printAs", ma + "addressLine1", ma + "addressLine2", ma + "city", ma + "state", ma + "postCode"],
+                         [{"$in": {"id": ids[i:i + 200]}}]):
+            addrs[g(r, "id")] = [g(r, "contacts.default.printAs") or "", g(r, ma + "addressLine1") or "", g(r, ma + "addressLine2") or "",
+                                 g(r, ma + "city") or "", g(r, ma + "state") or "", g(r, ma + "postCode") or ""]
+
     # last cash receipt per customer (same-day receipts summed; zero-amount credit applications ignored)
     since = (dt.datetime.now(tz).date() - dt.timedelta(days=730)).isoformat()
     by_day = {}
@@ -164,7 +174,7 @@ def build_live(bundle, tz):
         if c not in last_pay or d > last_pay[c][0]:
             last_pay[c] = [d, amt]
 
-    return items, names, last_pay, check_total
+    return items, names, last_pay, check_total, addrs
 
 
 # ----------------------------------------------------------------------------- sample
@@ -184,17 +194,18 @@ def build_sample():
 
 
 # ----------------------------------------------------------------------------- assemble
-def assemble(mode, items, names, divs, last_pay, check_total, tz, as_of=None, generated=None):
+def assemble(mode, items, names, divs, last_pay, check_total, tz, as_of=None, generated=None, addrs=None, entities=None):
     now = dt.datetime.now(tz)
     total = round(sum(x["bal"] for x in items), 2)
     ids = sorted({x["c"] for x in items})
-    customers = {c: {"n": names.get(c) or c, "div": divs.get(c, "Unassigned"), "lp": last_pay.get(c)} for c in ids}
+    addrs = addrs or {}
+    customers = {c: {"n": names.get(c) or c, "div": divs.get(c, "Unassigned"), "lp": last_pay.get(c), "a": addrs.get(c)} for c in ids}
     return {
         "v": 2, "mode": mode, "company": os.environ.get("COMPANY_NAME", "GFS Logistics"),
         "asOf": as_of or now.date().isoformat(), "generatedAt": generated or now.isoformat(timespec="seconds"),
         "publishedAt": now.isoformat(timespec="seconds"), "tz": str(tz),
         "total": total, "check": {"customerBalances": check_total, "ties": abs(total - check_total) < 0.005},
-        "customers": customers, "items": items,
+        "customers": customers, "items": items, "entities": entities or {},
     }
 
 
@@ -214,19 +225,26 @@ def main():
 
     if args.sample:
         items, names, divs, last_pay, check = build_sample()
-        snap = assemble("sample", items, names, divs, last_pay, check, tz)
+        demo = lambda n, logo: {"name": n, "logo": logo, "address": ["100 Example St", "Dallas, TX 75201"],
+                                "bank": {"Bank Name": "Example Bank", "Account Name": n, "Routing Number": "000000000", "Account Number": "0000000"},
+                                "billcom": "https://example.com/pay"}
+        addrs = {c: [names[c], "123 Main St", "", "Dallas", "TX", "75201"] for c in names}
+        snap = assemble("sample", items, names, divs, last_pay, check, tz, addrs=addrs,
+                        entities={"G1": demo("GFS Logistics", "logo.png"), "G2": demo("Texas Cartage Warehouse, LLC", "tcw-logo.png")})
     else:
         bundle = load_bundle()
         divs = division_map(bundle)
         if env("SAGE_CLIENT_ID", required=False):
-            items, names, last_pay, check = build_live(bundle, tz)
+            items, names, last_pay, check, addrs = build_live(bundle, tz)
             for c, n in ((bundle or {}).get("names") or {}).items():
                 names.setdefault(c, n)
-            snap = assemble("live", items, names, divs, last_pay, check, tz)
+            snap = assemble("live", items, names, divs, last_pay, check, tz, addrs=addrs,
+                            entities=(bundle or {}).get("entities"))
         elif bundle:
             snap = bundle["snapshot"]
             for c, info in snap["customers"].items():  # apply any division overrides
                 info["div"] = divs.get(c, info.get("div", "Unassigned"))
+            snap["entities"] = bundle.get("entities") or snap.get("entities") or {}
             snap["mode"] = "snapshot"
             snap["publishedAt"] = dt.datetime.now(tz).isoformat(timespec="seconds")
         else:

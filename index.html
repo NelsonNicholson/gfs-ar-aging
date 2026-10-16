@@ -153,6 +153,11 @@ html,body{overflow-x:clip}
 .dl{display:inline-block;min-width:54px;text-align:center;font-size:12px;font-weight:600;padding:2px 7px;border-radius:99px;color:#fff}
 .type{font-size:11px;color:var(--muted)}
 footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wrap:wrap;gap:6px 18px}
+.stmt{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin-bottom:16px}
+.stmt .t{font-size:13px}.stmt .t b{display:block;color:var(--navy);font-size:14px}
+.btn.dl{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
+.btn.dl:disabled{opacity:.6;cursor:wait}
+.warnline{font-size:12px;color:var(--b2);margin-top:3px}
 </style>
 </head>
 <body>
@@ -397,7 +402,13 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
     const lp = c.lp;
     const pos = c.b.reduce((a, v) => a + Math.max(v, 0), 0) || 1;
     const its = [...c.items].sort((a, b) => b.age - a.age);
+    const ent = entityFor(c.div), a = (snap.customers[c.id] || {}).a;
+    const noAddr = !a || !(a[1] || a[3]);
     $("#dBody").innerHTML = `
+      <div class="stmt"><div class="t"><b>Customer statement</b>${ent ? esc(ent.name) + " template · as of " + fmtDate(snap.asOf) : "Statement template not available"}
+        ${noAddr ? `<div class="warnline">No mailing address in Sage, so the statement will show the customer name only.</div>` : ""}
+        ${c.div === "Unassigned" ? `<div class="warnline">No division assigned, so the GFS Logistics template is used.</div>` : ""}</div>
+        <button class="btn dl" id="stmtBtn" data-id="${esc(c.id)}" ${ent ? "" : "disabled"}>Download PDF</button></div>
       <div class="dstats">
         <div class="dstat"><div class="label">Open balance</div><div class="value">${fmt.format(c.total)}</div><div class="note">${its.length} open item${its.length === 1 ? "" : "s"}</div></div>
         <div class="dstat"><div class="label">${mode === "due" ? "Past due" : "Older than 30 days"}</div><div class="value" style="color:${pd > 0.005 ? "var(--b3)" : "inherit"}">${fmt.format(pd)}</div><div class="note">${c.oldest > 0 ? (mode === "due" ? `Oldest is ${c.oldest} days late` : `Oldest is ${c.oldest} days old`) : "Nothing late"}</div></div>
@@ -433,7 +444,135 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
+  // ---------- customer statements (PDF, built in the browser) ----------
+  const entityFor = div => (snap.entities || {})[div === "G2" ? "G2" : "G1"];
+  let jsPdfP = null;
+  const loadJsPdf = () => window.jspdf ? Promise.resolve(window.jspdf) : (jsPdfP = jsPdfP || new Promise((res, rej) => {
+    const s = document.createElement("script"); s.src = "jspdf.umd.min.js";
+    s.onload = () => res(window.jspdf); s.onerror = () => { jsPdfP = null; rej(new Error("jspdf")); }; document.head.appendChild(s);
+  }));
+  const imgCache = {};
+  async function loadImg(src) {
+    if (imgCache[src]) return imgCache[src];
+    const blob = await (await fetch(src)).blob();
+    const url = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+    const [w, h] = await new Promise(r => { const im = new Image(); im.onload = () => r([im.naturalWidth, im.naturalHeight]); im.src = url; });
+    return imgCache[src] = {url, w, h};
+  }
+  const mdy = s => { const [y, m, d] = s.split("-"); return `${m}/${d}/${y}`; };
+  const usd = v => (v < -0.004 ? "-" : "") + "$" + Math.abs(v).toLocaleString("en-US", {minimumFractionDigits:2, maximumFractionDigits:2});
+
+  async function buildStatement(id) {
+    const info = snap.customers[id], ent = entityFor(info.div);
+    const {jsPDF} = await loadJsPdf();
+    const logo = await loadImg(ent.logo);
+    const doc = new jsPDF({unit:"pt", format:"letter"});
+    const R = 594, X0 = 13, X1 = 594;
+    const ink = () => doc.setTextColor(25, 25, 25);
+    const font = (style, size) => { doc.setFont("helvetica", style); doc.setFontSize(size); };
+    const asOf = toDay(snap.asOf);
+    const items = snap.items.filter(i => i.c === id).map(i => ({...i, age: Math.round((asOf - toDay(i.due || i.d)) / DAY)}))
+      .sort((a, b) => a.d < b.d ? -1 : a.d > b.d ? 1 : String(a.n).localeCompare(String(b.n)));
+    const bk = [0,0,0,0,0];
+    items.forEach(i => { const a = i.age; bk[a <= 0 ? 0 : a <= 30 ? 1 : a <= 60 ? 2 : a <= 90 ? 3 : 4] += i.bal; });
+    const total = bk.reduce((s, v) => s + v, 0);
+
+    // header: logo, company address, statement label and date
+    const lw = 150, lh = lw * logo.h / logo.w;
+    doc.addImage(logo.url, "PNG", 22, 24, lw, lh);
+    font("normal", 8.5); ink();
+    ent.address.forEach((l, k) => doc.text(l, 24, 24 + lh + 14 + k * 11));
+    font("bold", 9); doc.text("Statement", R, 100, {align:"right"});
+    font("normal", 11); doc.text(mdy(snap.asOf), R, 134, {align:"right"});
+
+    // customer + bill to
+    font("bold", 11); doc.text("Customer ID:", 18, 162);
+    font("normal", 11); doc.text(String(id), 18 + doc.getTextWidth("Customer ID:") + 12, 162);
+    const a = info.a || [info.n, "", "", "", "", ""], nm = a[0] || info.n;
+    font("bold", 11); doc.text("Bill To:", 18, 188); doc.text(nm, 67, 188);
+    font("normal", 11);
+    let by = 202; doc.text("Attn:  " + nm, 67, by);
+    [a[1], a[2]].filter(Boolean).forEach(l => { by += 14.5; doc.text(l, 67, by); });
+    const csz = [a[3], [a[4], a[5]].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+    if (csz) { by += 24; doc.text(csz, 67, by); }
+
+    // remittance information
+    const rx = 384;
+    font("bold", 9); doc.text("REMITTANCE INFORMATION:", rx, 186);
+    font("normal", 8); let ry = 205;
+    Object.entries(ent.bank).forEach(([k, v]) => { doc.text(`${k}: ${v}`, rx, ry); ry += 10.8; });
+    ry += 9;
+    doc.text("We encourage our customers to connect your", rx, ry); ry += 10;
+    let t = "account to "; doc.text(t, rx, ry); let tx = rx + doc.getTextWidth(t);
+    font("bold", 8); doc.text("Bill.com", tx, ry); tx += doc.getTextWidth("Bill.com");
+    font("normal", 8); doc.text(" using the following link:", tx, ry); ry += 10;
+    font("bold", 8); doc.text(ent.billcom, rx, ry);
+
+    font("normal", 11); doc.setTextColor(232, 97, 90);
+    doc.text("This is not an invoice.", 18, Math.max(by, ry) + 30);
+
+    // open items table
+    const cols = [13, 130, 255, 365, 472, 581], heads = ["INVOICE DATE", "INVOICE NO.", "DUE DATE", "BALANCE DUE", "PAYMENTS"];
+    const footer = n => { font("normal", 8.5); ink(); doc.text("This is a statement detailing all open items on your account.", 44, 742); doc.text("Page | " + n, R, 742, {align:"right"}); };
+    const tableHead = y => {
+      doc.setFillColor(236, 236, 236); doc.rect(cols[0], y, cols[5] - cols[0], 22, "F");
+      font("bold", 10); doc.setTextColor(55, 55, 55);
+      heads.forEach((h, k) => doc.text(h, (cols[k] + cols[k + 1]) / 2, y + 15, {align:"center"}));
+      return y + 22;
+    };
+    let page = 1, y = tableHead(Math.max(by, ry) + 50);
+    const rowH = 22;
+    items.forEach(i => {
+      if (y + rowH > 715) { footer(page); doc.addPage(); page++; y = tableHead(50); }
+      font("normal", 9); ink();
+      doc.text(mdy(i.d), (cols[0] + cols[1]) / 2, y + 13, {align:"center"});
+      doc.text(String(i.n), cols[1] + 6, y + 13);
+      doc.text(mdy(i.due || i.d), cols[2] + 4, y + 13);
+      doc.text(usd(i.bal), cols[4] - 8, y + 13, {align:"right"});
+      const paid = i.t === "inv" ? i.amt - i.bal : 0;
+      if (paid > 0.005) doc.text(usd(paid), cols[5] - 8, y + 13, {align:"right"});
+      doc.setDrawColor(200, 200, 200); doc.setLineWidth(0.6);
+      [cols[1], cols[2], cols[3], cols[4], cols[5]].forEach(x => doc.line(x, y, x, y + rowH));
+      y += rowH;
+    });
+    if (y + 175 > 730) { footer(page); doc.addPage(); page++; y = 60; }
+
+    // total due
+    y += 22; font("bold", 10); ink();
+    const amt = usd(total), aw = doc.getTextWidth(amt);
+    doc.text(amt, R, y, {align:"right"});
+    doc.setTextColor(42, 127, 158); doc.text("Total Due:", R - aw - 5, y, {align:"right"});
+
+    // aging summary
+    const ys = Math.max(y + 60, page === 1 ? 505 : y + 60), cw = (X1 - X0) / 6;
+    const labels = ["Current", "1 – 30", "31 – 60", "61 – 90", "Over 91 days", "Total due"], vals = [...bk, total];
+    doc.setFillColor(236, 236, 236); doc.rect(X0, ys, X1 - X0, 15, "F");
+    font("normal", 11); ink();
+    labels.forEach((l, k) => doc.text(l, X0 + cw * k + cw / 2, ys + 11.5, {align:"center"}));
+    vals.forEach((v, k) => doc.text(usd(v), X0 + cw * k + cw / 2, ys + 27, {align:"center"}));
+    doc.setDrawColor(190, 190, 190);
+    for (let k = 1; k < 6; k++) doc.line(X0 + cw * k, ys, X0 + cw * k, ys + 32);
+
+    font("bold", 11); ink();
+    doc.text("THIS DOCUMENT IS NOT AN INVOICE.", 18, ys + 68);
+    doc.text("IT IS A STATEMENT DETAILING ALL OPEN ITEMS ON YOUR ACCOUNT.", 18, ys + 82);
+    footer(page);
+    return doc;
+  }
+
+  async function downloadStatement(id, btn) {
+    const label = btn.textContent; btn.disabled = true; btn.textContent = "Building…";
+    try {
+      const doc = await buildStatement(id);
+      doc.save(`Statement_${String(id).replace(/[^A-Za-z0-9_-]+/g, "-")}_${snap.asOf}.pdf`);
+    } catch (e) {
+      console.error(e); btn.insertAdjacentHTML("afterend", `<div class="warnline">Couldn't build the PDF. Reload the page and try again.</div>`);
+    } finally { btn.disabled = false; btn.textContent = label; }
+  }
+  window.__buildStatement = buildStatement; // used by automated checks
+
   // ---------- events ----------
+  $("#dBody").addEventListener("click", e => { const b = e.target.closest("#stmtBtn"); if (b) downloadStatement(b.dataset.id, b); });
   $("#lockForm").addEventListener("submit", e => { e.preventDefault(); const pw = $("#pw").value; if (pw) unlock(pw, $("#remember").checked); });
   $("#lockBtn").addEventListener("click", () => { try { localStorage.removeItem(LS_KEY); sessionStorage.removeItem(LS_KEY); } catch {} closeDrawer(); snap = null; $("#pw").value = ""; $("#app").classList.add("hidden"); $("#lock").classList.remove("hidden"); });
   $("#csvBtn").addEventListener("click", exportCsv);
