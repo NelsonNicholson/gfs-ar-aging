@@ -38,7 +38,7 @@ jobs:
       - name: Build site folder
         run: |
           mkdir -p site
-          cp index.html logo.png site/
+          cp index.html *.png jspdf.umd.min.js site/
 
       - name: Build encrypted AR snapshot (live Sage feed, or stored snapshot until Sage is connected)
         env:
