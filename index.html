@@ -228,7 +228,7 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
 
 <script>
 (() => {
-  const DATA_URL = "data.enc.json", LS_KEY = "arAging.pw", STALE_HOURS = 26;
+  const DATA_URL = "data.enc.json", LS_KEY = "arAging.pw", STALE_HOURS = 74; // covers weekends between 6 PM runs
   const $ = s => document.querySelector(s);
   const fmt = new Intl.NumberFormat("en-US", {style:"currency", currency:"USD"});
   const fmt0 = new Intl.NumberFormat("en-US", {style:"currency", currency:"USD", maximumFractionDigits:0});
@@ -318,7 +318,7 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
 
     // banners
     const bn = [];
-    if (snap.mode === "snapshot") bn.push(`<div class="banner info">Showing the Sage snapshot from ${fmtDate(snap.asOf)}. Once the live Sage feed is connected, this refreshes every hour on business days.</div>`);
+    if (snap.mode === "snapshot") bn.push(`<div class="banner info">Showing the Sage snapshot from ${fmtDate(snap.asOf)}. Once the live Sage feed is connected, this refreshes automatically every weekday at 6 PM CT.</div>`);
     if (snap.mode === "sample") bn.push(`<div class="banner">Sample data, not from Sage.</div>`);
     if (snap.mode === "live" && (Date.now() - pub.getTime()) / 36e5 > STALE_HOURS) bn.push(`<div class="banner bad">This data is more than ${STALE_HOURS} hours old. The refresh job may have failed; check the repo's Actions tab.</div>`);
     if (snap.check && !snap.check.ties) bn.push(`<div class="banner bad">Open items (${fmt.format(snap.total)}) don't tie to Sage customer balances (${fmt.format(snap.check.customerBalances)}).</div>`);

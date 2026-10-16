@@ -7,13 +7,14 @@ The dashboard has three views: **Entire company**, **Division G1** and **Divisio
 ## How it works
 
 ```
-Sage Intacct ──► GitHub Action (hourly, Mon–Fri 7 AM–6 PM CT) ──► encrypted data.enc.json ──► GitHub Pages
+Sage Intacct ──► GitHub Action (weekdays ~6:05 PM CT) ──────────► encrypted data.enc.json ──► GitHub Pages
                  fetch_ar.py                                                                 index.html decrypts
                                                                                              with your passphrase
 ```
 
 - **Live mode** (once the `SAGE_*` secrets exist): each run pulls open invoices, credit memos, unapplied payments and advances, plus each customer's last cash receipt, from the Sage REST API.
-- **Snapshot mode** (until then): republishes the verified Sage snapshot from Oct 16, 2026. That snapshot is stored encrypted in `seed.enc.json` and unlocked by the `SEED_KEY` secret.
+- **Snapshot mode** (until then): republishes the latest verified Sage snapshot. That snapshot is stored encrypted in `seed.enc.json` and unlocked by the `SEED_KEY` secret. To refresh it, ask Claude to pull a new snapshot from Sage, then upload the new `seed.enc.json` here. The site updates within about a minute.
+- **On-demand refresh:** Actions → Refresh AR aging dashboard → **Run workflow**.
 - **Every run checks the total against Sage.** The company total must tie to the sum of Sage customer balances; if it doesn't, the dashboard shows a red banner.
 
 ## Secrets (Settings → Secrets and variables → Actions)
