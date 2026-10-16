@@ -2,12 +2,11 @@ name: Refresh AR aging dashboard
 
 on:
   schedule:
-    # Hourly at :05 past, 7 AM–6 PM Central (UTC 12–23 during CDT; shifts 1 hr in winter), Mon–Fri.
+    # Hourly at :05 past, 7 AM-6 PM Central (UTC 12-23 during CDT; shifts 1 hr in winter), Mon-Fri.
     - cron: "5 12-23 * * 1-5"
   workflow_dispatch:        # "Run workflow" button in the Actions tab
   push:
     branches: [main]
-    paths: ["site/**", "scripts/**", ".github/workflows/**"]
 
 permissions:
   contents: read
@@ -34,6 +33,11 @@ jobs:
 
       - run: pip install -r requirements.txt
 
+      - name: Build site folder
+        run: |
+          mkdir -p site
+          cp index.html site/index.html
+
       - name: Pull open AR from Sage Intacct and encrypt
         env:
           SAGE_CLIENT_ID: ${{ secrets.SAGE_CLIENT_ID }}
@@ -44,9 +48,9 @@ jobs:
         run: |
           if [ -z "$SAGE_CLIENT_ID" ]; then
             echo "::warning::Sage secrets not set yet - deploying SAMPLE data"
-            python scripts/fetch_ar.py --sample --out site/data.enc.json
+            python fetch_ar.py --sample --out site/data.enc.json
           else
-            python scripts/fetch_ar.py --out site/data.enc.json
+            python fetch_ar.py --out site/data.enc.json
           fi
 
       - uses: actions/configure-pages@v5
