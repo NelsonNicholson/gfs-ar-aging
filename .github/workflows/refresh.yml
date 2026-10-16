@@ -2,8 +2,10 @@ name: Refresh AR aging dashboard
 
 on:
   schedule:
-    # Hourly at :05 past, 7 AM-6 PM Central (UTC 12-23 during CDT; shifts 1 hr in winter), Mon-Fri.
-    - cron: "5 12-23 * * 1-5"
+    # Weekdays at ~6:05 PM Central. GitHub schedules run in UTC, so two triggers cover
+    # daylight time (23:05 UTC) and standard time (00:05 UTC); the extra run is harmless.
+    - cron: "5 23 * * 1-5"
+    - cron: "5 0 * * 2-6"
   workflow_dispatch:
   push:
     branches: [main]
