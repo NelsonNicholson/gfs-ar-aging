@@ -87,7 +87,8 @@ class Sage:
             sys.exit(f"Sage authentication failed ({r.status_code}): {r.text[:500]}")
         self.s.headers["Authorization"] = "Bearer " + r.json()["access_token"]
 
-    def query(self, obj, fields, filters=None):
+    def query(self, obj, fields, filters=None, required=True):
+        """required=False: on failure, print a warning and return None so the run can fall back."""
         rows, start = [], 1
         while True:
             body = {"object": obj, "fields": fields, "start": start, "size": PAGE_SIZE}
@@ -95,7 +96,11 @@ class Sage:
                 body["filters"] = filters
             r = self.s.post(f"{self.base}/services/core/query", json=body, timeout=120)
             if r.status_code >= 400:
-                sys.exit(f"Sage query on {obj} failed ({r.status_code}): {r.text[:500]}")
+                msg = f"Sage query on {obj} failed ({r.status_code}): {r.text[:500]}"
+                if required:
+                    sys.exit(msg)
+                print("::warning::" + msg + " - using last known values instead")
+                return None
             data = r.json()
             rows.extend(data.get("ia::result", []))
             nxt = (data.get("ia::meta") or {}).get("next")
@@ -129,19 +134,16 @@ def build_live(bundle, tz):
                       "c": c, "d": g(r, "invoiceDate"), "due": g(r, "dueDate") or g(r, "invoiceDate"),
                       "amt": money(g(r, "totalBaseAmount")), "bal": bal})
 
-    for r in s.query("accounts-receivable/posted-over-payment",
-                     ["id", "customer.id", "customer.name", "paymentDate", "baseCurrency.totalAmount", "baseCurrency.totalAmountDue"],
-                     [{"$ne": {"baseCurrency.totalAmountDue": "0"}}]):
-        c = g(r, "customer.id"); names[c] = g(r, "customer.name") or c; d = g(r, "paymentDate")
-        items.append({"t": "op", "n": f"Overpayment {g(r, 'id')}", "ref": "", "c": c, "d": d, "due": d,
-                      "amt": -abs(money(g(r, "baseCurrency.totalAmount"))), "bal": -abs(money(g(r, "baseCurrency.totalAmountDue")))})
-
-    for r in s.query("accounts-receivable/advance",
-                     ["id", "customer.id", "customer.name", "paymentInformation.receiptDate", "totalEntered", "paymentInformation.totalDue"],
-                     [{"$ne": {"paymentInformation.totalDue": "0"}}]):
-        c = g(r, "customer.id"); names[c] = g(r, "customer.name") or c; d = g(r, "paymentInformation.receiptDate")
-        items.append({"t": "adv", "n": f"Advance {g(r, 'id')}", "ref": "", "c": c, "d": d, "due": d,
-                      "amt": -abs(money(g(r, "totalEntered"))), "bal": -abs(money(g(r, "paymentInformation.totalDue")))})
+    # unapplied cash: receipts with an open (unapplied) balance.
+    # recordType "rp" = payment with an unapplied overpayment, "rr" = advance receipt.
+    for r in s.query("accounts-receivable/payment",
+                     ["id", "customer.id", "customer.name", "paidDate", "recordType", "baseCurrency.totalAmount", "baseCurrency.totalDue"],
+                     [{"$ne": {"baseCurrency.totalDue": "0"}}]):
+        c = g(r, "customer.id"); names[c] = g(r, "customer.name") or c; d = g(r, "paidDate")
+        adv = str(g(r, "recordType") or "").lower() == "rr"
+        items.append({"t": "adv" if adv else "op", "n": f"{'Advance' if adv else 'Overpayment'} {g(r, 'id')}", "ref": "",
+                      "c": c, "d": d, "due": d,
+                      "amt": -abs(money(g(r, "baseCurrency.totalAmount"))), "bal": -abs(money(g(r, "baseCurrency.totalDue")))})
 
     cust = s.query("accounts-receivable/customer", ["id", "name", "totalDue"], [{"$ne": {"totalDue": "0"}}])
     for r in cust:
@@ -149,20 +151,28 @@ def build_live(bundle, tz):
     check_total = round(sum(money(g(r, "totalDue")) for r in cust), 2)
 
     # mailing addresses for statements (customers with open items only)
+    prev = ((bundle or {}).get("snapshot") or {}).get("customers") or {}
     addrs, ids = {}, sorted({x["c"] for x in items})
     ma = "contacts.default.mailingAddress."
     for i in range(0, len(ids), 200):
-        for r in s.query("accounts-receivable/customer",
-                         ["id", "contacts.default.printAs", ma + "addressLine1", ma + "addressLine2", ma + "city", ma + "state", ma + "postCode"],
-                         [{"$in": {"id": ids[i:i + 200]}}]):
+        rows = s.query("accounts-receivable/customer",
+                       ["id", "contacts.default.printAs", ma + "addressLine1", ma + "addressLine2", ma + "city", ma + "state", ma + "postCode"],
+                       [{"$in": {"id": ids[i:i + 200]}}], required=False)
+        if rows is None:  # no access to contact fields: keep the addresses from the stored snapshot
+            addrs.update({c: v["a"] for c, v in prev.items() if v.get("a")})
+            break
+        for r in rows:
             addrs[g(r, "id")] = [g(r, "contacts.default.printAs") or "", g(r, ma + "addressLine1") or "", g(r, ma + "addressLine2") or "",
                                  g(r, ma + "city") or "", g(r, ma + "state") or "", g(r, ma + "postCode") or ""]
 
     # last cash receipt per customer (same-day receipts summed; zero-amount credit applications ignored)
     since = (dt.datetime.now(tz).date() - dt.timedelta(days=730)).isoformat()
     by_day = {}
-    for r in s.query("accounts-receivable/payment", ["customer.id", "paidDate", "state", "baseCurrency.totalAmount"],
-                     [{"$gte": {"paidDate": since}}]):
+    pays = s.query("accounts-receivable/payment", ["customer.id", "paidDate", "state", "baseCurrency.totalAmount"],
+                   [{"$gte": {"paidDate": since}}], required=False)
+    if pays is None:
+        return items, names, {c: v["lp"] for c, v in prev.items() if v.get("lp")}, check_total, addrs
+    for r in pays:
         st = str(g(r, "state") or "").lower()
         amt = money(g(r, "baseCurrency.totalAmount"))
         if amt <= 0 or "revers" in st or "void" in st or not g(r, "paidDate"):
