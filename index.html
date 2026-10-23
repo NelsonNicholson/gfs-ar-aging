@@ -158,6 +158,35 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
 .btn.dl{background:var(--brand);border-color:var(--brand);color:#fff;font-weight:600}
 .btn.dl:disabled{opacity:.6;cursor:wait}
 .warnline{font-size:12px;color:var(--b2);margin-top:3px}
+/* view switch + receipts */
+.views{display:inline-flex;gap:4px;background:var(--surface-2);border:1px solid var(--border);border-radius:11px;padding:4px;margin:0 0 14px}
+.vbtn{border:0;background:none;padding:7px 16px;border-radius:8px;cursor:pointer;font-weight:600;color:var(--muted)}
+.vbtn[aria-selected="true"]{background:var(--surface);color:var(--brand-ink);box-shadow:var(--shadow)}
+.rctl{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;padding:12px 16px}
+.rcustom{display:inline-flex;gap:10px;flex-wrap:wrap}
+.fl{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);font-weight:600}
+.sel{border:1px solid var(--border);border-radius:9px;padding:7px 10px;background:var(--surface);color:var(--text);font-weight:400}
+.sel:focus{outline:2px solid var(--brand);outline-offset:1px}
+.rchart{display:flex;align-items:flex-end;gap:2px;height:150px;border-bottom:1px solid var(--border);padding-top:6px}
+.rchart .col{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;min-width:3px;cursor:default}
+.rchart .col span{display:block;background:var(--brand);border-radius:3px 3px 0 0;min-height:1px}
+.rchart .col:hover span{background:var(--brand-ink)}
+.rchart .col.zero span{background:var(--border)}
+.rlabels{display:flex;gap:2px;font-size:11px;color:var(--muted);margin-top:4px}
+.rlabels span{flex:1;text-align:center;white-space:nowrap;overflow:visible;min-width:3px}
+.rtbl{min-width:680px}
+.method{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--surface-2);border:1px solid var(--border);white-space:nowrap}
+.hsearch{position:relative;flex:1;max-width:420px;min-width:220px}
+.hsearch .search{max-width:none;width:100%}
+.hsugg{position:absolute;left:0;right:0;top:calc(100% + 4px);background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);z-index:6;max-height:300px;overflow-y:auto}
+.hsugg button{display:flex;justify-content:space-between;gap:10px;width:100%;text-align:left;border:0;background:none;padding:9px 12px;cursor:pointer}
+.hsugg button:hover,.hsugg button.on{background:var(--brand-soft)}
+.hsugg .sm{font-size:12px;color:var(--muted)}
+.hhead{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin:4px 0 12px}
+.hhead h3{margin:0;font-size:17px;color:var(--navy)}
+.hstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.mini{margin:0 0 16px}.mini td{padding:6px 8px;border-bottom:1px solid var(--border);font-size:13px}
+.linkbtn{border:0;background:none;color:var(--brand-ink);cursor:pointer;padding:0;font-weight:600;text-decoration:underline}
 </style>
 </head>
 <body>
@@ -193,7 +222,47 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
 
   <div class="wrap">
     <div class="tabs" id="tabs" role="tablist"></div>
+    <div class="views" role="tablist" aria-label="View">
+      <button class="vbtn" data-view="aging" role="tab" aria-selected="true">AR aging</button>
+      <button class="vbtn" data-view="rcpt" role="tab" aria-selected="false">Payment receipts</button>
+    </div>
     <div id="banners"></div>
+
+    <div id="rcptView" class="hidden">
+      <section class="card panel rctl">
+        <label class="fl">Period <select id="rPeriod" class="sel"></select></label>
+        <span id="rCustom" class="hidden rcustom">
+          <label class="fl">From <input type="date" id="rFrom" class="sel"></label>
+          <label class="fl">To <input type="date" id="rTo" class="sel"></label>
+        </span>
+        <span class="muted" id="rRangeTxt"></span>
+      </section>
+      <div id="rEmpty" class="card panel hidden"></div>
+      <div id="rMain">
+        <section class="kpis" id="rKpis"></section>
+        <section class="card panel"><h2 id="rChartTitle">Receipts</h2><div class="rchart" id="rChart"></div><div class="rlabels" id="rLabels"></div></section>
+        <section class="card panel">
+          <div class="tablehead">
+            <h2 style="margin:0">Receipts <span class="muted" id="rCount" style="font-weight:400;font-size:13px"></span></h2>
+            <input class="search" id="rSearch" type="search" placeholder="Filter by customer, ID or reference #">
+          </div>
+          <div class="tscroll"><table class="ctbl rtbl"><thead><tr id="rHead"></tr></thead><tbody id="rBody"></tbody><tfoot id="rFoot"></tfoot></table></div>
+          <p class="muted" style="font-size:12px;margin:8px 0 0">Click a receipt to see that customer's full payment history below.</p>
+        </section>
+      </div>
+      <section class="card panel" id="histPanel">
+        <div class="tablehead">
+          <h2 style="margin:0">Customer payment history</h2>
+          <div class="hsearch">
+            <input class="search" id="hSearch" type="search" placeholder="Search any customer by name or ID" autocomplete="off" aria-autocomplete="list" aria-controls="hSugg">
+            <div class="hsugg hidden" id="hSugg" role="listbox"></div>
+          </div>
+        </div>
+        <div id="hBody"><p class="muted">Search for a customer to see every payment received from them, across all dates.</p></div>
+      </section>
+    </div>
+
+    <div id="agingView">
     <section class="kpis" id="kpis"></section>
 
     <div class="grid2">
@@ -218,6 +287,7 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
         </table>
       </div>
     </section>
+    </div>
     <footer id="foot"></footer>
   </div>
 </div>
@@ -251,6 +321,7 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
   const fmtDate = s => s ? new Date(toDay(s)).toLocaleDateString("en-US", {month:"short", day:"numeric", year:"numeric", timeZone:"UTC"}) : "";
 
   let snap = null, mode = "due", scope = "ALL", bucketFilter = null, query = "", sortKey = "total", sortDir = -1, openCust = null;
+  let view = "aging", rPeriod = "this", rFrom = "", rTo = "", rQuery = "", rSortKey = "d", rSortDir = -1, histCust = null;
 
   // ---------- unlock ----------
   const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
@@ -281,6 +352,7 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
   function prepare() {
     const set = new Set(Object.values(snap.customers).map(c => c.div));
     divisions = ["G1", "G2"].filter(d => set.has(d)).concat([...set].filter(d => !["G1","G2"].includes(d)).sort());
+    buildPeriodOptions();
   }
   function ageOf(it) {
     const ref = mode === "due" ? (it.due || it.d) : (it.d || it.due);
@@ -306,6 +378,7 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
     return {custs:[...custs.values()], totals, total: totals.reduce((a, v) => a + v, 0), credits};
   }
   const daysSince = d => Math.round((toDay(snap.asOf) - toDay(d)) / DAY);
+  const ago = d => { const n = daysSince(d); return n <= 0 ? "today" : n === 1 ? "1 day ago" : n + " days ago"; };
 
   // ---------- render ----------
   function render() {
@@ -315,10 +388,11 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
 
     // tabs
     const scopes = ["ALL", ...divisions];
+    const rng = view === "rcpt" ? periodRange() : null;
     $("#tabs").innerHTML = scopes.map(s => {
-      const t = compute(s).total;
+      const t = view === "rcpt" ? receiptsIn(s, rng[0], rng[1]).reduce((a, r) => a + r[2], 0) : compute(s).total;
       const lbl = s === "ALL" ? "Entire company" : s === "Unassigned" ? "Unassigned" : "Division " + s;
-      return `<button class="tab" role="tab" data-scope="${esc(s)}" aria-selected="${scope === s}"><div class="tl">${lbl}</div><div class="tv">${fmt0.format(t)}</div></button>`;
+      return `<button class="tab" role="tab" data-scope="${esc(s)}" aria-selected="${scope === s}"><div class="tl">${lbl}</div><div class="tv">${fmt0.format(t)}${view === "rcpt" ? " received" : ""}</div></button>`;
     }).join("");
 
     // banners
@@ -330,6 +404,19 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
     const un = Object.entries(snap.customers).filter(([, c]) => c.div === "Unassigned");
     if (un.length && scope === "ALL") bn.push(`<div class="banner">${un.length} customer${un.length > 1 ? "s have" : " has"} no division assigned: ${un.slice(0, 6).map(([id, c]) => esc(c.n)).join(", ")}${un.length > 6 ? "…" : ""}.</div>`);
     $("#banners").innerHTML = bn.join("");
+
+    // view switch
+    document.querySelectorAll(".vbtn").forEach(b => b.setAttribute("aria-selected", b.dataset.view === view));
+    $("#agingView").classList.toggle("hidden", view !== "aging");
+    $("#rcptView").classList.toggle("hidden", view !== "rcpt");
+    $(".seg").classList.toggle("hidden", view !== "aging");
+    if (view === "rcpt") {
+      renderReceipts(rng);
+      $("#foot").innerHTML = `<span>Source: Sage Intacct cash receipts (customer payments and advances, base currency). Applying an earlier overpayment or credit isn't new cash, so it isn't counted.</span>
+        ${snap.receipts && snap.receipts.length ? `<span>Payment history on file from ${fmtDate(snap.receipts[snap.receipts.length - 1][0])}.</span>` : ""}`;
+      if (openCust) renderDrawer(openCust);
+      return;
+    }
 
     // KPIs
     const pastDue = mode === "due" ? total - totals[0] : null;
@@ -392,6 +479,161 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
     if (openCust) renderDrawer(openCust);
   }
 
+  // ---------- payment receipts ----------
+  const METHOD = {printedCheck:"Check", eft:"EFT / ACH", creditCard:"Credit card", cash:"Cash", onlineChargeCard:"Online card",
+                  onlineAchDebit:"Online ACH", paymentAcceptanceService:"Online payment", advance:"Advance"};
+  const methodLbl = m => METHOD[m] || (m || "Other");
+  const custInfo = id => snap.customers[id] || (snap.rcust || {})[id] || {n:id, div:"Unassigned"};
+  const isoD = (y, m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const monthName = (y, m, style = "long") => new Date(Date.UTC(y, m - 1, 1)).toLocaleDateString("en-US", {month:style, year:"numeric", timeZone:"UTC"});
+  function periodRange() {
+    const [y, m] = snap.asOf.split("-").map(Number);
+    if (rPeriod === "this") return [isoD(y, m, 1), snap.asOf];
+    if (rPeriod === "last") { const py = m === 1 ? y - 1 : y, pm = m === 1 ? 12 : m - 1; return [isoD(py, pm, 1), isoD(py, pm, lastDay(py, pm))]; }
+    if (rPeriod === "ytd") return [isoD(y, 1, 1), snap.asOf];
+    if (rPeriod.startsWith("m:")) { const [yy, mm] = rPeriod.slice(2).split("-").map(Number); return [isoD(yy, mm, 1), isoD(yy, mm, lastDay(yy, mm))]; }
+    let f = rFrom || isoD(y, m, 1), t = rTo || snap.asOf;
+    if (f > t) [f, t] = [t, f];
+    return [f, t];
+  }
+  const receiptsIn = (sc, f, t) => (snap.receipts || []).filter(r => r[0] >= f && r[0] <= t && (sc === "ALL" || custInfo(r[1]).div === sc));
+  function buildPeriodOptions() {
+    const [y, m] = snap.asOf.split("-").map(Number);
+    const rc = snap.receipts || [];
+    const earliest = rc.length ? rc[rc.length - 1][0] : snap.asOf;
+    const [ey, em] = earliest.split("-").map(Number);
+    const months = []; let yy = y, mm = m;
+    while (yy > ey || (yy === ey && mm >= em)) { months.push([`m:${yy}-${String(mm).padStart(2, "0")}`, monthName(yy, mm)]); if (!--mm) { mm = 12; yy--; } }
+    $("#rPeriod").innerHTML = [["this", `This month (${monthName(y, m)})`], ["last", "Last month"], ["ytd", `Year to date (${y})`]]
+      .map(([v, l]) => `<option value="${v}">${l}</option>`).join("")
+      + `<optgroup label="Pick a month">${months.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</optgroup>`
+      + `<option value="custom">Custom date range…</option>`;
+    $("#rPeriod").value = rPeriod;
+    ["#rFrom", "#rTo"].forEach(s => { $(s).min = earliest; $(s).max = snap.asOf; });
+  }
+
+  function renderReceipts([f, t]) {
+    const has = (snap.receipts || []).length > 0;
+    $("#rEmpty").classList.toggle("hidden", has); $("#rMain").classList.toggle("hidden", !has);
+    $("#rCustom").classList.toggle("hidden", rPeriod !== "custom");
+    if (rPeriod === "custom") { $("#rFrom").value = f; $("#rTo").value = t; }
+    $("#rRangeTxt").textContent = `${fmtDate(f)} – ${fmtDate(t)}`;
+    if (!has) {
+      $("#rEmpty").innerHTML = `<p class="muted" style="margin:0">Payment history isn't included in this data yet. It appears once the dashboard pulls live from Sage.</p>`;
+      return renderHistory();
+    }
+    const list = receiptsIn(scope, f, t);
+    const total = list.reduce((a, r) => a + r[2], 0), payers = new Set(list.map(r => r[1]));
+    const byM = {}; list.forEach(r => { const k = methodLbl(r[4]); byM[k] = (byM[k] || 0) + r[2]; });
+    const split = Object.entries(byM).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${fmt0.format(v)}`).join(" · ") || "No receipts in this period";
+    const big = list.reduce((b, r) => (!b || r[2] > b[2]) ? r : b, null);
+    $("#rKpis").innerHTML = [
+      ["", "Total received", fmt0.format(total), split],
+      ["ok", "Receipts", list.length.toLocaleString(), `${payers.size} customer${payers.size === 1 ? "" : "s"} paid`],
+      ["", "Average receipt", list.length ? fmt0.format(total / list.length) : "–", "Per payment received"],
+      ["", "Largest receipt", big ? fmt0.format(big[2]) : "–", big ? esc(custInfo(big[1]).n) + " · " + fmtDate(big[0]) : ""],
+    ].map(([c, l, v, n]) => `<div class="card kpi ${c}"><div class="label">${l}</div><div class="value">${v}</div><div class="note">${n}</div></div>`).join("");
+
+    // chart: by day for ranges up to ~2 months, otherwise by month
+    const days = Math.round((toDay(t) - toDay(f)) / DAY) + 1, bk = [];
+    if (days <= 62) {
+      for (let k = 0; k < days; k++) { const d = new Date(toDay(f) + k * DAY).toISOString().slice(0, 10); bk.push({lbl: String(+d.slice(8)), tip: fmtDate(d), v: 0}); }
+      list.forEach(r => { const b = bk[Math.round((toDay(r[0]) - toDay(f)) / DAY)]; if (b) b.v += r[2]; });
+      $("#rChartTitle").textContent = "Receipts by day";
+    } else {
+      let [yy, mm] = f.split("-").map(Number); const [ty, tm] = t.split("-").map(Number), idx = {};
+      while (yy < ty || (yy === ty && mm <= tm)) { idx[`${yy}-${String(mm).padStart(2, "0")}`] = bk.length; bk.push({lbl: monthName(yy, mm, "short").replace(/ \d{4}$/, ""), tip: monthName(yy, mm), v: 0}); if (++mm > 12) { mm = 1; yy++; } }
+      list.forEach(r => { const b = bk[idx[r[0].slice(0, 7)]]; if (b) b.v += r[2]; });
+      $("#rChartTitle").textContent = "Receipts by month";
+    }
+    const mx = Math.max(1, ...bk.map(b => b.v)), every = Math.ceil(bk.length / 16);
+    $("#rChart").innerHTML = bk.map(b => `<div class="col ${b.v ? "" : "zero"}" title="${b.tip}: ${fmt.format(b.v)}"><span style="height:${b.v ? Math.max(2, b.v / mx * 100) : 0.7}%"></span></div>`).join("");
+    $("#rLabels").innerHTML = bk.map((b, i) => `<span>${i % every === 0 ? b.lbl : ""}</span>`).join("");
+
+    // table
+    const q = rQuery.trim().toLowerCase();
+    const rows = list.filter(r => !q || custInfo(r[1]).n.toLowerCase().includes(q) || r[1].toLowerCase().includes(q) || String(r[3]).toLowerCase().includes(q));
+    const cols = [["d", "Date", 0], ["c", "Customer", 0], ...(scope === "ALL" ? [["div", "Div.", 0]] : []), ["ref", "Reference #", 0], ["m", "Method", 0], ["amt", "Amount", 1]];
+    const val = (r, k) => k === "d" ? r[0] : k === "c" ? custInfo(r[1]).n.toLowerCase() : k === "div" ? custInfo(r[1]).div : k === "ref" ? String(r[3]) : k === "m" ? methodLbl(r[4]) : r[2];
+    rows.sort((a, b) => { const x = val(a, rSortKey), y = val(b, rSortKey); return ((x < y ? -1 : x > y ? 1 : 0) * rSortDir) || (b[0] < a[0] ? -1 : 1); });
+    $("#rHead").innerHTML = cols.map(([k, l, n]) => `<th data-k="${k}" class="${n ? "num" : ""}" ${rSortKey === k ? `aria-sort="${rSortDir > 0 ? "ascending" : "descending"}"` : ""}>${l}</th>`).join("");
+    $("#rBody").innerHTML = rows.map(r => { const ci = custInfo(r[1]); return `<tr data-c="${esc(r[1])}"><td>${fmtDate(r[0])}</td><td><span class="cname">${esc(ci.n)}</span><span class="cid">${esc(r[1])}</span></td>${scope === "ALL" ? `<td><span class="chip ${esc(ci.div)}">${esc(ci.div)}</span></td>` : ""}<td>${esc(r[3]) || '<span class="muted">–</span>'}</td><td><span class="method">${esc(methodLbl(r[4]))}</span></td><td class="num">${fmt.format(r[2])}</td></tr>`; }).join("")
+      || `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--muted);padding:24px">No receipts ${q ? "match that search" : "in this period"}.</td></tr>`;
+    $("#rFoot").innerHTML = `<tr><td colspan="${cols.length - 1}">Total${rows.length !== list.length ? " (filtered)" : ""} · ${rows.length} receipt${rows.length === 1 ? "" : "s"}</td><td class="num">${fmt.format(rows.reduce((a, r) => a + r[2], 0))}</td></tr>`;
+    $("#rCount").textContent = `· ${rows.length} shown`;
+    renderHistory();
+  }
+
+  // customer payment history (all dates, any division)
+  function searchableCustomers() {
+    const m = new Map();
+    Object.entries(snap.customers).forEach(([id, c]) => m.set(id, c.n));
+    Object.entries(snap.rcust || {}).forEach(([id, c]) => m.set(id, c.n));
+    return [...m].map(([id, n]) => ({id, n}));
+  }
+  let suggIdx = -1;
+  function suggest(q) {
+    const box = $("#hSugg"); q = q.trim().toLowerCase();
+    if (!q) { box.classList.add("hidden"); return; }
+    const all = searchableCustomers(), rc = snap.receipts || [];
+    const hits = all.filter(x => x.n.toLowerCase().includes(q) || x.id.toLowerCase().includes(q))
+      .sort((a, b) => (b.n.toLowerCase().startsWith(q) - a.n.toLowerCase().startsWith(q)) || a.n.localeCompare(b.n)).slice(0, 10);
+    suggIdx = -1;
+    box.innerHTML = hits.map(x => { const n = rc.filter(r => r[1] === x.id).length; return `<button type="button" role="option" data-id="${esc(x.id)}"><span>${esc(x.n)} <span class="sm">${esc(x.id)}</span></span><span class="sm">${n} payment${n === 1 ? "" : "s"}</span></button>`; }).join("")
+      || `<div style="padding:10px 12px" class="muted">No customer matches “${esc(q)}”.</div>`;
+    box.classList.remove("hidden");
+  }
+  function pickHistory(id) {
+    histCust = id; $("#hSugg").classList.add("hidden");
+    $("#hSearch").value = custInfo(id).n;
+    renderHistory();
+  }
+  function renderHistory() {
+    const el = $("#hBody");
+    if (!histCust) { el.innerHTML = `<p class="muted">Search for a customer to see every payment received from them, across all dates.</p>`; return; }
+    const ci = custInfo(histCust), rs = (snap.receipts || []).filter(r => r[1] === histCust);
+    const tot = rs.reduce((a, r) => a + r[2], 0), open = compute("ALL").custs.find(c => c.id === histCust);
+    const since = (snap.receipts || []).length ? fmtDate(snap.receipts[snap.receipts.length - 1][0]) : "";
+    let rowsHtml = "", curM = "";
+    rs.forEach(r => {
+      const mk = r[0].slice(0, 7);
+      if (mk !== curM) {
+        curM = mk; const inM = rs.filter(x => x[0].startsWith(mk)), [yy, mm] = mk.split("-").map(Number);
+        rowsHtml += `<tr><td colspan="3" style="background:var(--surface-2);font-weight:650">${monthName(yy, mm)} <span class="muted" style="font-weight:400">· ${inM.length} payment${inM.length === 1 ? "" : "s"}</span></td><td class="num" style="background:var(--surface-2);font-weight:650">${fmt.format(inM.reduce((a, x) => a + x[2], 0))}</td></tr>`;
+      }
+      rowsHtml += `<tr><td>${fmtDate(r[0])}</td><td>${esc(r[3]) || '<span class="muted">–</span>'}</td><td><span class="method">${esc(methodLbl(r[4]))}</span></td><td class="num">${fmt.format(r[2])}</td></tr>`;
+    });
+    el.innerHTML = `
+      <div class="hhead"><div><h3>${esc(ci.n)}</h3><div class="muted">${esc(histCust)} · <span class="chip ${esc(ci.div)}">${esc(ci.div === "Unassigned" ? "No division" : "Division " + ci.div)}</span></div></div>
+        <div class="toolbar">${open ? `<button class="btn" data-open="${esc(histCust)}">Open AR detail</button>` : ""}<button class="btn" data-hcsv="1" ${rs.length ? "" : "disabled"}>Export CSV</button></div></div>
+      <div class="hstats">
+        <div class="dstat"><div class="label">Total received</div><div class="value">${fmt.format(tot)}</div><div class="note">Since ${since}</div></div>
+        <div class="dstat"><div class="label">Payments</div><div class="value">${rs.length}</div><div class="note">${rs.length ? "Avg " + fmt0.format(tot / rs.length) : "None on record"}</div></div>
+        <div class="dstat"><div class="label">Last payment</div><div class="value">${rs.length ? fmt.format(rs[0][2]) : "–"}</div><div class="note">${rs.length ? fmtDate(rs[0][0]) + " · " + ago(rs[0][0]) : ""}</div></div>
+        <div class="dstat"><div class="label">Open AR balance</div><div class="value">${open ? fmt.format(open.total) : "$0.00"}</div><div class="note">${open && open.total - open.b[0] > 0.005 ? fmt0.format(open.total - open.b[0]) + " past due" : "Nothing past due"}</div></div>
+      </div>
+      ${rs.length ? `<div class="tscroll"><table class="ctbl rtbl"><thead><tr><th style="cursor:default">Date</th><th style="cursor:default">Reference #</th><th style="cursor:default">Method</th><th class="num" style="cursor:default">Amount</th></tr></thead>
+        <tbody>${rowsHtml}</tbody><tfoot><tr><td colspan="3">All payments on record</td><td class="num">${fmt.format(tot)}</td></tr></tfoot></table></div>`
+        : `<p class="muted">No payments from this customer since ${since}.</p>`}`;
+  }
+  function openHistory(id) {
+    closeDrawer(); view = "rcpt"; histCust = id; $("#hSearch").value = custInfo(id).n; render();
+    setTimeout(() => $("#histPanel").scrollIntoView({behavior:"smooth", block:"start"}), 50);
+  }
+  function downloadCsv(name, lines) {
+    const a = Object.assign(document.createElement("a"), {href: URL.createObjectURL(new Blob([lines.join("\n")], {type:"text/csv"})), download: name});
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  const csvq = s => `"${String(s ?? "").replace(/"/g, '""')}"`;
+  function exportReceiptsCsv() {
+    const [f, t] = periodRange(), q = rQuery.trim().toLowerCase();
+    const rows = receiptsIn(scope, f, t).filter(r => !q || custInfo(r[1]).n.toLowerCase().includes(q) || r[1].toLowerCase().includes(q) || String(r[3]).toLowerCase().includes(q));
+    downloadCsv(`receipts-${scope === "ALL" ? "company" : scope}-${f}-to-${t}.csv`,
+      [["Date", "Customer ID", "Customer", "Division", "Reference", "Method", "Amount"].join(","),
+       ...rows.map(r => [r[0], csvq(r[1]), csvq(custInfo(r[1]).n), csvq(custInfo(r[1]).div), csvq(r[3]), csvq(methodLbl(r[4])), r[2].toFixed(2)].join(","))]);
+  }
+
   // ---------- drawer ----------
   function renderDrawer(id) {
     const c = compute("ALL").custs.find(x => x.id === id); if (!c) return closeDrawer();
@@ -413,8 +655,13 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
         <div class="dstat"><div class="label">Open balance</div><div class="value">${fmt.format(c.total)}</div><div class="note">${its.length} open item${its.length === 1 ? "" : "s"}</div></div>
         <div class="dstat"><div class="label">${mode === "due" ? "Past due" : "Older than 30 days"}</div><div class="value" style="color:${pd > 0.005 ? "var(--b3)" : "inherit"}">${fmt.format(pd)}</div><div class="note">${c.oldest > 0 ? (mode === "due" ? `Oldest is ${c.oldest} days late` : `Oldest is ${c.oldest} days old`) : "Nothing late"}</div></div>
         <div class="dstat pay"><div><div class="label">Last payment received</div><div class="value">${lp ? fmt.format(lp[1]) : "None on record"}</div></div>
-          <div class="num"><div style="font-weight:600">${lp ? fmtDate(lp[0]) : ""}</div><div class="note">${lp ? daysSince(lp[0]) + " days ago" : ""}</div></div></div>
+          <div class="num"><div style="font-weight:600">${lp ? fmtDate(lp[0]) : ""}</div><div class="note">${lp ? ago(lp[0]) : ""}</div></div></div>
       </div>
+      ${(snap.receipts || []).length ? (() => { const rs = snap.receipts.filter(r => r[1] === c.id).slice(0, 5); return `
+      <h4 style="margin:0 0 6px;color:var(--navy)">Recent payments</h4>
+      ${rs.length ? `<table class="mini" style="width:100%"><tbody>${rs.map(r => `<tr><td>${fmtDate(r[0])}</td><td>${esc(r[3]) || '<span class="muted">–</span>'}</td><td><span class="method">${esc(methodLbl(r[4]))}</span></td><td class="num">${fmt.format(r[2])}</td></tr>`).join("")}</tbody></table>`
+        : `<p class="muted" style="margin:0 0 8px">No payments on record.</p>`}
+      <p style="margin:-6px 0 16px"><button class="linkbtn" data-hist="${esc(c.id)}">See full payment history →</button></p>`; })() : ""}
       <div class="bar sm" style="height:12px">${c.b.map((v, i) => v > 0 ? `<span style="flex:${v / pos};background:${COLORS[i]}"></span>` : "").join("")}</div>
       <div class="legend">${c.b.map((v, i) => Math.abs(v) >= 0.005 ? `<span><span class="sw" style="background:${COLORS[i]}"></span>${M.short[i]}: ${fmt0.format(v)}</span>` : "").join("")}</div>
       <h4 style="margin:0 0 6px;color:var(--navy)">Open items</h4>
@@ -575,7 +822,38 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
   $("#dBody").addEventListener("click", e => { const b = e.target.closest("#stmtBtn"); if (b) downloadStatement(b.dataset.id, b); });
   $("#lockForm").addEventListener("submit", e => { e.preventDefault(); const pw = $("#pw").value; if (pw) unlock(pw, $("#remember").checked); });
   $("#lockBtn").addEventListener("click", () => { try { localStorage.removeItem(LS_KEY); sessionStorage.removeItem(LS_KEY); } catch {} closeDrawer(); snap = null; $("#pw").value = ""; $("#app").classList.add("hidden"); $("#lock").classList.remove("hidden"); });
-  $("#csvBtn").addEventListener("click", exportCsv);
+  $("#csvBtn").addEventListener("click", () => view === "rcpt" ? exportReceiptsCsv() : exportCsv());
+  // receipts view events
+  document.querySelector(".views").addEventListener("click", e => { const b = e.target.closest(".vbtn"); if (b && b.dataset.view !== view) { view = b.dataset.view; render(); } });
+  $("#rPeriod").addEventListener("change", e => {
+    if (e.target.value === "custom" && !rFrom) { const [f, t] = periodRange(); rFrom = f; rTo = t; }
+    rPeriod = e.target.value; render();
+  });
+  $("#rFrom").addEventListener("change", e => { rFrom = e.target.value; render(); });
+  $("#rTo").addEventListener("change", e => { rTo = e.target.value; render(); });
+  $("#rSearch").addEventListener("input", e => { rQuery = e.target.value; render(); });
+  $("#rHead").addEventListener("click", e => { const th = e.target.closest("th"); if (!th) return; const k = th.dataset.k; if (rSortKey === k) rSortDir *= -1; else { rSortKey = k; rSortDir = ["c", "div", "ref", "m"].includes(k) ? 1 : -1; } render(); });
+  $("#rBody").addEventListener("click", e => { const tr = e.target.closest("tr[data-c]"); if (!tr) return; pickHistory(tr.dataset.c); $("#histPanel").scrollIntoView({behavior:"smooth", block:"start"}); });
+  $("#hSearch").addEventListener("input", e => suggest(e.target.value));
+  $("#hSearch").addEventListener("focus", e => { if (e.target.value && !histCust) suggest(e.target.value); });
+  $("#hSearch").addEventListener("keydown", e => {
+    const opts = [...$("#hSugg").querySelectorAll("button")];
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); if (!opts.length) return; suggIdx = (suggIdx + (e.key === "ArrowDown" ? 1 : -1) + opts.length) % opts.length; opts.forEach((o, i) => o.classList.toggle("on", i === suggIdx)); }
+    else if (e.key === "Enter") { e.preventDefault(); const o = opts[suggIdx >= 0 ? suggIdx : 0]; if (o) pickHistory(o.dataset.id); }
+    else if (e.key === "Escape") $("#hSugg").classList.add("hidden");
+  });
+  $("#hSugg").addEventListener("click", e => { const b = e.target.closest("button[data-id]"); if (b) pickHistory(b.dataset.id); });
+  document.addEventListener("click", e => { if (!e.target.closest(".hsearch")) $("#hSugg").classList.add("hidden"); });
+  $("#hBody").addEventListener("click", e => {
+    const o = e.target.closest("[data-open]"); if (o) return openDrawer(o.dataset.open);
+    if (e.target.closest("[data-hcsv]")) {
+      const rs = (snap.receipts || []).filter(r => r[1] === histCust);
+      downloadCsv(`payment-history-${histCust.replace(/[^A-Za-z0-9_-]+/g, "-")}.csv`,
+        [["Date", "Customer ID", "Customer", "Reference", "Method", "Amount"].join(","),
+         ...rs.map(r => [r[0], csvq(r[1]), csvq(custInfo(r[1]).n), csvq(r[3]), csvq(methodLbl(r[4])), r[2].toFixed(2)].join(","))]);
+    }
+  });
+  $("#dBody").addEventListener("click", e => { const b = e.target.closest("[data-hist]"); if (b) openHistory(b.dataset.hist); });
   document.querySelectorAll(".seg button").forEach(b => b.addEventListener("click", () => { mode = b.dataset.mode; bucketFilter = null; document.querySelectorAll(".seg button").forEach(x => x.setAttribute("aria-pressed", x === b)); render(); }));
   const setScope = s => { scope = s; bucketFilter = null; query = ""; $("#search").value = ""; render(); window.scrollTo({top:0, behavior:"smooth"}); };
   $("#tabs").addEventListener("click", e => { const t = e.target.closest(".tab"); if (t) setScope(t.dataset.scope); });

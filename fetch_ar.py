@@ -165,26 +165,40 @@ def build_live(bundle, tz):
             addrs[g(r, "id")] = [g(r, "contacts.default.printAs") or "", g(r, ma + "addressLine1") or "", g(r, ma + "addressLine2") or "",
                                  g(r, ma + "city") or "", g(r, ma + "state") or "", g(r, ma + "postCode") or ""]
 
-    # last cash receipt per customer (same-day receipts summed; zero-amount credit applications ignored)
+    # cash receipts (payment history) for the last 2 years.
+    # recordType: rp = customer payment, rr = advance receipt (both new cash);
+    # ro = application of an earlier overpayment/advance (not new cash -> excluded).
     since = (dt.datetime.now(tz).date() - dt.timedelta(days=730)).isoformat()
-    by_day = {}
-    pays = s.query("accounts-receivable/payment", ["customer.id", "paidDate", "state", "baseCurrency.totalAmount"],
+    pays = s.query("accounts-receivable/payment",
+                   ["id", "documentNumber", "referenceNumber", "paymentMethod", "paidDate", "state", "recordType",
+                    "baseCurrency.totalAmount", "customer.id", "customer.name"],
                    [{"$gte": {"paidDate": since}}], required=False)
     if pays is None:
-        return items, names, {c: v["lp"] for c, v in prev.items() if v.get("lp")}, check_total, addrs
+        return items, names, {c: v["lp"] for c, v in prev.items() if v.get("lp")}, check_total, addrs, None
+    receipts = []
     for r in pays:
         st = str(g(r, "state") or "").lower()
+        rt = str(g(r, "recordType") or "").lower()
         amt = money(g(r, "baseCurrency.totalAmount"))
-        if amt <= 0 or "revers" in st or "void" in st or not g(r, "paidDate"):
+        d = g(r, "paidDate")
+        if amt <= 0 or not d or rt not in ("rp", "rr") or "revers" in st or "void" in st:
             continue
-        k = (g(r, "customer.id"), g(r, "paidDate"))
-        by_day[k] = round(by_day.get(k, 0) + amt, 2)
+        c = g(r, "customer.id")
+        names.setdefault(c, g(r, "customer.name") or c)
+        ref = g(r, "documentNumber") or g(r, "referenceNumber") or ""
+        receipts.append([d, c, amt, ref, g(r, "paymentMethod") or ("advance" if rt == "rr" else ""), str(g(r, "id") or "")])
+    receipts.sort(key=lambda x: (x[0], x[1]), reverse=True)
+
+    # last cash receipt per customer (same-day receipts summed)
+    by_day = {}
+    for d, c, amt, *_ in receipts:
+        by_day[(c, d)] = round(by_day.get((c, d), 0) + amt, 2)
     last_pay = {}
     for (c, d), amt in by_day.items():
         if c not in last_pay or d > last_pay[c][0]:
             last_pay[c] = [d, amt]
 
-    return items, names, last_pay, check_total, addrs
+    return items, names, last_pay, check_total, addrs, receipts
 
 
 # ----------------------------------------------------------------------------- sample
@@ -200,11 +214,20 @@ def build_sample():
             d = today - dt.timedelta(days=rnd.randint(0, 200)); amt = round(rnd.uniform(150, 30000), 2)
             items.append({"t": "inv", "n": f"I{9000 + len(items)}", "ref": "", "c": c, "d": d.isoformat(),
                           "due": (d + dt.timedelta(days=30)).isoformat(), "amt": amt, "bal": amt})
-    return items, names, divs, last_pay, round(sum(x["bal"] for x in items), 2)
+    receipts = []
+    for k in range(220):
+        c = f"CUST{rnd.randint(1, 10):03d}"
+        receipts.append([(today - dt.timedelta(days=rnd.randint(0, 300))).isoformat(), c, round(rnd.uniform(100, 25000), 2),
+                         str(rnd.randint(10000, 99999)), rnd.choice(["eft", "printedCheck"]), str(1000 + k)])
+    receipts.sort(reverse=True)
+    for d, c, amt, *_ in receipts:
+        if c not in last_pay or d > last_pay[c][0]:
+            last_pay[c] = [d, amt]
+    return items, names, divs, last_pay, round(sum(x["bal"] for x in items), 2), receipts
 
 
 # ----------------------------------------------------------------------------- assemble
-def assemble(mode, items, names, divs, last_pay, check_total, tz, as_of=None, generated=None, addrs=None, entities=None):
+def assemble(mode, items, names, divs, last_pay, check_total, tz, as_of=None, generated=None, addrs=None, entities=None, receipts=None):
     now = dt.datetime.now(tz)
     total = round(sum(x["bal"] for x in items), 2)
     ids = sorted({x["c"] for x in items})
@@ -216,6 +239,10 @@ def assemble(mode, items, names, divs, last_pay, check_total, tz, as_of=None, ge
         "publishedAt": now.isoformat(timespec="seconds"), "tz": str(tz),
         "total": total, "check": {"customerBalances": check_total, "ties": abs(total - check_total) < 0.005},
         "customers": customers, "items": items, "entities": entities or {},
+        # payment history: [paidDate, customerId, amount, reference, method, id]; rcust = payers with no open items
+        "receipts": receipts or [],
+        "rcust": {c: {"n": names.get(c) or c, "div": divs.get(c, "Unassigned")}
+                  for c in sorted({r[1] for r in (receipts or [])} - set(ids))},
     }
 
 
@@ -234,22 +261,30 @@ def main():
     tz = ZoneInfo(os.environ.get("REPORT_TZ", "America/Chicago"))
 
     if args.sample:
-        items, names, divs, last_pay, check = build_sample()
+        items, names, divs, last_pay, check, receipts = build_sample()
         demo = lambda n, logo: {"name": n, "logo": logo, "address": ["100 Example St", "Dallas, TX 75201"],
                                 "bank": {"Bank Name": "Example Bank", "Account Name": n, "Routing Number": "000000000", "Account Number": "0000000"},
                                 "billcom": "https://example.com/pay"}
         addrs = {c: [names[c], "123 Main St", "", "Dallas", "TX", "75201"] for c in names}
         snap = assemble("sample", items, names, divs, last_pay, check, tz, addrs=addrs,
-                        entities={"G1": demo("GFS Logistics", "logo.png"), "G2": demo("Texas Cartage Warehouse, LLC", "tcw-logo.png")})
+                        entities={"G1": demo("GFS Logistics", "logo.png"), "G2": demo("Texas Cartage Warehouse, LLC", "tcw-logo.png")},
+                        receipts=receipts)
     else:
         bundle = load_bundle()
         divs = division_map(bundle)
         if env("SAGE_CLIENT_ID", required=False):
-            items, names, last_pay, check, addrs = build_live(bundle, tz)
+            items, names, last_pay, check, addrs, receipts = build_live(bundle, tz)
             for c, n in ((bundle or {}).get("names") or {}).items():
                 names.setdefault(c, n)
             snap = assemble("live", items, names, divs, last_pay, check, tz, addrs=addrs,
-                            entities=(bundle or {}).get("entities"))
+                            entities=(bundle or {}).get("entities"), receipts=receipts)
+            if receipts:
+                today = dt.datetime.now(tz).date()
+                m0 = today.strftime("%Y-%m")
+                m1 = (today.replace(day=1) - dt.timedelta(days=1)).strftime("%Y-%m")
+                tot = lambda m: (sum(1 for r in receipts if r[0][:7] == m), round(sum(r[2] for r in receipts if r[0][:7] == m), 2))
+                print(f"[receipts] {len(receipts)} cash receipts since {receipts[-1][0]}; "
+                      f"{m0}: {tot(m0)[0]} totaling {tot(m0)[1]:,.2f}; {m1}: {tot(m1)[0]} totaling {tot(m1)[1]:,.2f}")
         elif bundle:
             snap = bundle["snapshot"]
             for c, info in snap["customers"].items():  # apply any division overrides
