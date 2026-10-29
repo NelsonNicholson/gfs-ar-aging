@@ -186,6 +186,14 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
 .hhead h3{margin:0;font-size:17px;color:var(--navy)}
 .hstats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
 .mini{margin:0 0 16px}.mini td{padding:6px 8px;border-bottom:1px solid var(--border);font-size:13px}
+.inv{display:inline-block;font-size:12px;font-variant-numeric:tabular-nums;padding:1px 6px;border-radius:6px;background:var(--brand-soft);color:var(--brand-ink);font-weight:600}
+.unap{font-size:12px;color:var(--b2);font-weight:600}
+.invlist{font-size:13px;line-height:1.7}
+tr.rrow{cursor:pointer}
+tr.rrow td:first-child::before{content:"▸";display:inline-block;width:14px;color:var(--muted);transition:transform .15s}
+tr.rrow.open td:first-child::before{transform:rotate(90deg)}
+tr.rdetail>td{background:var(--surface-2);padding:0}
+tr.rdetail .inner{padding:10px 14px 14px 30px}
 .linkbtn{border:0;background:none;color:var(--brand-ink);cursor:pointer;padding:0;font-weight:600;text-decoration:underline}
 </style>
 </head>
@@ -244,10 +252,10 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
         <section class="card panel">
           <div class="tablehead">
             <h2 style="margin:0">Receipts <span class="muted" id="rCount" style="font-weight:400;font-size:13px"></span></h2>
-            <input class="search" id="rSearch" type="search" placeholder="Filter by customer, ID or reference #">
+            <input class="search" id="rSearch" type="search" placeholder="Filter by customer, reference # or invoice #">
           </div>
           <div class="tscroll"><table class="ctbl rtbl"><thead><tr id="rHead"></tr></thead><tbody id="rBody"></tbody><tfoot id="rFoot"></tfoot></table></div>
-          <p class="muted" style="font-size:12px;margin:8px 0 0">Click a receipt to see that customer's full payment history below.</p>
+          <p class="muted" style="font-size:12px;margin:8px 0 0">Click a receipt to see which invoices it paid. Search also finds an invoice number to show which payment paid it.</p>
         </section>
       </div>
       <section class="card panel" id="histPanel">
@@ -322,6 +330,7 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
 
   let snap = null, mode = "due", scope = "ALL", bucketFilter = null, query = "", sortKey = "total", sortDir = -1, openCust = null;
   let view = "aging", rPeriod = "this", rFrom = "", rTo = "", rQuery = "", rSortKey = "d", rSortDir = -1, histCust = null;
+  const rOpen = new Set();
 
   // ---------- unlock ----------
   const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
@@ -483,6 +492,26 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
   const METHOD = {printedCheck:"Check", eft:"EFT / ACH", creditCard:"Credit card", cash:"Cash", onlineChargeCard:"Online card",
                   onlineAchDebit:"Online ACH", paymentAcceptanceService:"Online payment", advance:"Advance"};
   const methodLbl = m => METHOD[m] || (m || "Other");
+  // r[6] = [[invoiceNumber, invoiceDate, amountApplied], ...] (absent if invoice links weren't loaded)
+  const applied = r => (r[6] || []).reduce((a, x) => a + x[2], 0);
+  const unapplied = r => r.length > 6 ? Math.round((r[2] - applied(r)) * 100) / 100 : 0;
+  function invSummary(r) {
+    if (r.length <= 6) return '<span class="muted">–</span>';
+    const inv = r[6];
+    if (!inv.length) return `<span class="muted">${r[4] === "advance" ? "Advance (not yet applied)" : "Not applied to an invoice"}</span>`;
+    const tip = inv.map(x => `${x[0]}: ${fmt.format(x[2])}`).join("\n") + (unapplied(r) > 0.004 ? `\nUnapplied: ${fmt.format(unapplied(r))}` : "");
+    return `<span title="${esc(tip)}">${inv.slice(0, 2).map(x => `<span class="inv">${esc(x[0])}</span>`).join(" ")}${inv.length > 2 ? ` <span class="muted">+${inv.length - 2} more</span>` : ""}${unapplied(r) > 0.004 ? ` <span class="unap">+ ${fmt0.format(unapplied(r))} credit</span>` : ""}</span>`;
+  }
+  function invDetail(r) {
+    if (r.length <= 6) return '<p class="muted" style="margin:0">Invoice details aren\'t available for this receipt.</p>';
+    const u = unapplied(r);
+    return `<table class="itbl" style="width:auto;min-width:420px"><thead><tr><th>Invoice #</th><th>Invoice date</th><th class="num">Amount applied</th></tr></thead><tbody>
+      ${r[6].map(x => `<tr><td>${esc(x[0])}</td><td>${x[1] ? fmtDate(x[1]) : ""}</td><td class="num">${fmt.format(x[2])}</td></tr>`).join("")}
+      ${u > 0.004 ? `<tr><td colspan="2"><span class="unap">${r[4] === "advance" ? "Advance" : "Overpayment"} held as credit</span> <span class="muted">(applied separately when used)</span></td><td class="num">${fmt.format(u)}</td></tr>` : ""}
+      ${!r[6].length && u <= 0.004 ? `<tr><td colspan="3" class="muted">Not applied to an invoice</td></tr>` : ""}
+      </tbody><tfoot><tr><td colspan="2">Receipt total</td><td class="num">${fmt.format(r[2])}</td></tr></tfoot></table>`;
+  }
+  const invText = r => r.length > 6 ? r[6].map(x => `${x[0]} ${x[2].toFixed(2)}`).join("; ") : "";
   const custInfo = id => snap.customers[id] || (snap.rcust || {})[id] || {n:id, div:"Unassigned"};
   const isoD = (y, m, d) => `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   const lastDay = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -553,12 +582,13 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
 
     // table
     const q = rQuery.trim().toLowerCase();
-    const rows = list.filter(r => !q || custInfo(r[1]).n.toLowerCase().includes(q) || r[1].toLowerCase().includes(q) || String(r[3]).toLowerCase().includes(q));
-    const cols = [["d", "Date", 0], ["c", "Customer", 0], ...(scope === "ALL" ? [["div", "Div.", 0]] : []), ["ref", "Reference #", 0], ["m", "Method", 0], ["amt", "Amount", 1]];
-    const val = (r, k) => k === "d" ? r[0] : k === "c" ? custInfo(r[1]).n.toLowerCase() : k === "div" ? custInfo(r[1]).div : k === "ref" ? String(r[3]) : k === "m" ? methodLbl(r[4]) : r[2];
+    const rows = list.filter(r => !q || custInfo(r[1]).n.toLowerCase().includes(q) || r[1].toLowerCase().includes(q) || String(r[3]).toLowerCase().includes(q) || (r[6] || []).some(x => String(x[0]).toLowerCase().includes(q)));
+    const cols = [["d", "Date", 0], ["c", "Customer", 0], ...(scope === "ALL" ? [["div", "Div.", 0]] : []), ["ref", "Reference #", 0], ["m", "Method", 0], ["inv", "Invoices paid", 0], ["amt", "Amount", 1]];
+    const val = (r, k) => k === "d" ? r[0] : k === "c" ? custInfo(r[1]).n.toLowerCase() : k === "div" ? custInfo(r[1]).div : k === "ref" ? String(r[3]) : k === "m" ? methodLbl(r[4]) : k === "inv" ? ((r[6] || [])[0] || [""])[0] : r[2];
     rows.sort((a, b) => { const x = val(a, rSortKey), y = val(b, rSortKey); return ((x < y ? -1 : x > y ? 1 : 0) * rSortDir) || (b[0] < a[0] ? -1 : 1); });
     $("#rHead").innerHTML = cols.map(([k, l, n]) => `<th data-k="${k}" class="${n ? "num" : ""}" ${rSortKey === k ? `aria-sort="${rSortDir > 0 ? "ascending" : "descending"}"` : ""}>${l}</th>`).join("");
-    $("#rBody").innerHTML = rows.map(r => { const ci = custInfo(r[1]); return `<tr data-c="${esc(r[1])}"><td>${fmtDate(r[0])}</td><td><span class="cname">${esc(ci.n)}</span><span class="cid">${esc(r[1])}</span></td>${scope === "ALL" ? `<td><span class="chip ${esc(ci.div)}">${esc(ci.div)}</span></td>` : ""}<td>${esc(r[3]) || '<span class="muted">–</span>'}</td><td><span class="method">${esc(methodLbl(r[4]))}</span></td><td class="num">${fmt.format(r[2])}</td></tr>`; }).join("")
+    $("#rBody").innerHTML = rows.map(r => { const ci = custInfo(r[1]), op = rOpen.has(r[5]); return `<tr class="rrow ${op ? "open" : ""}" data-r="${esc(r[5])}" data-c="${esc(r[1])}"><td>${fmtDate(r[0])}</td><td><span class="cname">${esc(ci.n)}</span><span class="cid">${esc(r[1])}</span></td>${scope === "ALL" ? `<td><span class="chip ${esc(ci.div)}">${esc(ci.div)}</span></td>` : ""}<td>${esc(r[3]) || '<span class="muted">–</span>'}</td><td><span class="method">${esc(methodLbl(r[4]))}</span></td><td>${invSummary(r)}</td><td class="num">${fmt.format(r[2])}</td></tr>`
+      + (op ? `<tr class="rdetail"><td colspan="${cols.length}"><div class="inner">${invDetail(r)}<p style="margin:10px 0 0"><button class="linkbtn" data-histc="${esc(r[1])}">Full payment history for ${esc(ci.n)} →</button></p></div></td></tr>` : ""); }).join("")
       || `<tr><td colspan="${cols.length}" style="text-align:center;color:var(--muted);padding:24px">No receipts ${q ? "match that search" : "in this period"}.</td></tr>`;
     $("#rFoot").innerHTML = `<tr><td colspan="${cols.length - 1}">Total${rows.length !== list.length ? " (filtered)" : ""} · ${rows.length} receipt${rows.length === 1 ? "" : "s"}</td><td class="num">${fmt.format(rows.reduce((a, r) => a + r[2], 0))}</td></tr>`;
     $("#rCount").textContent = `· ${rows.length} shown`;
@@ -600,9 +630,9 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
       const mk = r[0].slice(0, 7);
       if (mk !== curM) {
         curM = mk; const inM = rs.filter(x => x[0].startsWith(mk)), [yy, mm] = mk.split("-").map(Number);
-        rowsHtml += `<tr><td colspan="3" style="background:var(--surface-2);font-weight:650">${monthName(yy, mm)} <span class="muted" style="font-weight:400">· ${inM.length} payment${inM.length === 1 ? "" : "s"}</span></td><td class="num" style="background:var(--surface-2);font-weight:650">${fmt.format(inM.reduce((a, x) => a + x[2], 0))}</td></tr>`;
+        rowsHtml += `<tr><td colspan="4" style="background:var(--surface-2);font-weight:650">${monthName(yy, mm)} <span class="muted" style="font-weight:400">· ${inM.length} payment${inM.length === 1 ? "" : "s"}</span></td><td class="num" style="background:var(--surface-2);font-weight:650">${fmt.format(inM.reduce((a, x) => a + x[2], 0))}</td></tr>`;
       }
-      rowsHtml += `<tr><td>${fmtDate(r[0])}</td><td>${esc(r[3]) || '<span class="muted">–</span>'}</td><td><span class="method">${esc(methodLbl(r[4]))}</span></td><td class="num">${fmt.format(r[2])}</td></tr>`;
+      rowsHtml += `<tr><td>${fmtDate(r[0])}</td><td>${esc(r[3]) || '<span class="muted">–</span>'}</td><td><span class="method">${esc(methodLbl(r[4]))}</span></td><td class="invlist">${r.length > 6 ? (r[6].length ? r[6].map(x => `<span class="inv">${esc(x[0])}</span> ${fmt.format(x[2])}`).join("<br>") : "") + (unapplied(r) > 0.004 ? `${r[6].length ? "<br>" : ""}<span class="unap">${fmt.format(unapplied(r))} held as credit</span>` : "") || '<span class="muted">Not applied</span>' : '<span class="muted">–</span>'}</td><td class="num">${fmt.format(r[2])}</td></tr>`;
     });
     el.innerHTML = `
       <div class="hhead"><div><h3>${esc(ci.n)}</h3><div class="muted">${esc(histCust)} · <span class="chip ${esc(ci.div)}">${esc(ci.div === "Unassigned" ? "No division" : "Division " + ci.div)}</span></div></div>
@@ -613,8 +643,8 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
         <div class="dstat"><div class="label">Last payment</div><div class="value">${rs.length ? fmt.format(rs[0][2]) : "–"}</div><div class="note">${rs.length ? fmtDate(rs[0][0]) + " · " + ago(rs[0][0]) : ""}</div></div>
         <div class="dstat"><div class="label">Open AR balance</div><div class="value">${open ? fmt.format(open.total) : "$0.00"}</div><div class="note">${open && open.total - open.b[0] > 0.005 ? fmt0.format(open.total - open.b[0]) + " past due" : "Nothing past due"}</div></div>
       </div>
-      ${rs.length ? `<div class="tscroll"><table class="ctbl rtbl"><thead><tr><th style="cursor:default">Date</th><th style="cursor:default">Reference #</th><th style="cursor:default">Method</th><th class="num" style="cursor:default">Amount</th></tr></thead>
-        <tbody>${rowsHtml}</tbody><tfoot><tr><td colspan="3">All payments on record</td><td class="num">${fmt.format(tot)}</td></tr></tfoot></table></div>`
+      ${rs.length ? `<div class="tscroll"><table class="ctbl rtbl"><thead><tr><th style="cursor:default">Date</th><th style="cursor:default">Reference #</th><th style="cursor:default">Method</th><th style="cursor:default">Invoices paid</th><th class="num" style="cursor:default">Amount</th></tr></thead>
+        <tbody>${rowsHtml}</tbody><tfoot><tr><td colspan="4">All payments on record</td><td class="num">${fmt.format(tot)}</td></tr></tfoot></table></div>`
         : `<p class="muted">No payments from this customer since ${since}.</p>`}`;
   }
   function openHistory(id) {
@@ -628,10 +658,10 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
   const csvq = s => `"${String(s ?? "").replace(/"/g, '""')}"`;
   function exportReceiptsCsv() {
     const [f, t] = periodRange(), q = rQuery.trim().toLowerCase();
-    const rows = receiptsIn(scope, f, t).filter(r => !q || custInfo(r[1]).n.toLowerCase().includes(q) || r[1].toLowerCase().includes(q) || String(r[3]).toLowerCase().includes(q));
+    const rows = receiptsIn(scope, f, t).filter(r => !q || custInfo(r[1]).n.toLowerCase().includes(q) || r[1].toLowerCase().includes(q) || String(r[3]).toLowerCase().includes(q) || (r[6] || []).some(x => String(x[0]).toLowerCase().includes(q)));
     downloadCsv(`receipts-${scope === "ALL" ? "company" : scope}-${f}-to-${t}.csv`,
-      [["Date", "Customer ID", "Customer", "Division", "Reference", "Method", "Amount"].join(","),
-       ...rows.map(r => [r[0], csvq(r[1]), csvq(custInfo(r[1]).n), csvq(custInfo(r[1]).div), csvq(r[3]), csvq(methodLbl(r[4])), r[2].toFixed(2)].join(","))]);
+      [["Date", "Customer ID", "Customer", "Division", "Reference", "Method", "Amount", "Invoices paid", "Unapplied"].join(","),
+       ...rows.map(r => [r[0], csvq(r[1]), csvq(custInfo(r[1]).n), csvq(custInfo(r[1]).div), csvq(r[3]), csvq(methodLbl(r[4])), r[2].toFixed(2), csvq(invText(r)), unapplied(r).toFixed(2)].join(","))]);
   }
 
   // ---------- drawer ----------
@@ -659,7 +689,7 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
       </div>
       ${(snap.receipts || []).length ? (() => { const rs = snap.receipts.filter(r => r[1] === c.id).slice(0, 5); return `
       <h4 style="margin:0 0 6px;color:var(--navy)">Recent payments</h4>
-      ${rs.length ? `<table class="mini" style="width:100%"><tbody>${rs.map(r => `<tr><td>${fmtDate(r[0])}</td><td>${esc(r[3]) || '<span class="muted">–</span>'}</td><td><span class="method">${esc(methodLbl(r[4]))}</span></td><td class="num">${fmt.format(r[2])}</td></tr>`).join("")}</tbody></table>`
+      ${rs.length ? `<table class="mini" style="width:100%"><tbody>${rs.map(r => `<tr><td>${fmtDate(r[0])}</td><td>${esc(r[3]) || '<span class="muted">–</span>'}</td><td>${invSummary(r)}</td><td class="num">${fmt.format(r[2])}</td></tr>`).join("")}</tbody></table>`
         : `<p class="muted" style="margin:0 0 8px">No payments on record.</p>`}
       <p style="margin:-6px 0 16px"><button class="linkbtn" data-hist="${esc(c.id)}">See full payment history →</button></p>`; })() : ""}
       <div class="bar sm" style="height:12px">${c.b.map((v, i) => v > 0 ? `<span style="flex:${v / pos};background:${COLORS[i]}"></span>` : "").join("")}</div>
@@ -833,7 +863,12 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
   $("#rTo").addEventListener("change", e => { rTo = e.target.value; render(); });
   $("#rSearch").addEventListener("input", e => { rQuery = e.target.value; render(); });
   $("#rHead").addEventListener("click", e => { const th = e.target.closest("th"); if (!th) return; const k = th.dataset.k; if (rSortKey === k) rSortDir *= -1; else { rSortKey = k; rSortDir = ["c", "div", "ref", "m"].includes(k) ? 1 : -1; } render(); });
-  $("#rBody").addEventListener("click", e => { const tr = e.target.closest("tr[data-c]"); if (!tr) return; pickHistory(tr.dataset.c); $("#histPanel").scrollIntoView({behavior:"smooth", block:"start"}); });
+  $("#rBody").addEventListener("click", e => {
+    const l = e.target.closest("[data-histc]");
+    if (l) { pickHistory(l.dataset.histc); $("#histPanel").scrollIntoView({behavior:"smooth", block:"start"}); return; }
+    const tr = e.target.closest("tr.rrow"); if (!tr) return;
+    const id = tr.dataset.r; rOpen.has(id) ? rOpen.delete(id) : rOpen.add(id); render();
+  });
   $("#hSearch").addEventListener("input", e => suggest(e.target.value));
   $("#hSearch").addEventListener("focus", e => { if (e.target.value && !histCust) suggest(e.target.value); });
   $("#hSearch").addEventListener("keydown", e => {
@@ -849,8 +884,8 @@ footer{color:var(--muted);font-size:12px;margin:22px 0 40px;display:flex;flex-wr
     if (e.target.closest("[data-hcsv]")) {
       const rs = (snap.receipts || []).filter(r => r[1] === histCust);
       downloadCsv(`payment-history-${histCust.replace(/[^A-Za-z0-9_-]+/g, "-")}.csv`,
-        [["Date", "Customer ID", "Customer", "Reference", "Method", "Amount"].join(","),
-         ...rs.map(r => [r[0], csvq(r[1]), csvq(custInfo(r[1]).n), csvq(r[3]), csvq(methodLbl(r[4])), r[2].toFixed(2)].join(","))]);
+        [["Date", "Customer ID", "Customer", "Reference", "Method", "Amount", "Invoices paid", "Unapplied"].join(","),
+         ...rs.map(r => [r[0], csvq(r[1]), csvq(custInfo(r[1]).n), csvq(r[3]), csvq(methodLbl(r[4])), r[2].toFixed(2), csvq(invText(r)), unapplied(r).toFixed(2)].join(","))]);
     }
   });
   $("#dBody").addEventListener("click", e => { const b = e.target.closest("[data-hist]"); if (b) openHistory(b.dataset.hist); });
