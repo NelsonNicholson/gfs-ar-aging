@@ -189,6 +189,28 @@ def build_live(bundle, tz):
         receipts.append([d, c, amt, ref, g(r, "paymentMethod") or ("advance" if rt == "rr" else ""), str(g(r, "id") or "")])
     receipts.sort(key=lambda x: (x[0], x[1]), reverse=True)
 
+    # which invoices each receipt paid (payment-detail rows are per invoice line; sum them per invoice)
+    alloc = {}
+    det = s.query("accounts-receivable/payment-detail",
+                  ["arPayment.id", "arInvoice.id", "baseCurrency.paymentAmount", "paymentDate"],
+                  [{"$gte": {"paymentDate": since}}], required=False)
+    if det is not None:
+        for r in det:
+            pid, inv, amt = str(g(r, "arPayment.id") or ""), str(g(r, "arInvoice.id") or ""), money(g(r, "baseCurrency.paymentAmount"))
+            if pid and inv and amt:
+                alloc.setdefault(pid, {}); alloc[pid][inv] = round(alloc[pid].get(inv, 0) + amt, 2)
+        keys = sorted({k for a in alloc.values() for k in a})
+        invinfo = {}
+        for i in range(0, len(keys), 200):
+            rows = s.query("accounts-receivable/invoice", ["id", "invoiceNumber", "invoiceDate"],
+                           [{"$in": {"id": keys[i:i + 200]}}], required=False)
+            for r in rows or []:
+                invinfo[str(g(r, "id"))] = (g(r, "invoiceNumber") or "", g(r, "invoiceDate") or "")
+        for rc in receipts:  # 7th element: [[invoiceNumber, invoiceDate, amountApplied], ...]
+            a = alloc.get(rc[5], {})
+            rc.append(sorted([[invinfo.get(k, ("#" + k, ""))[0], invinfo.get(k, ("", ""))[1], v] for k, v in a.items()],
+                             key=lambda x: (x[1], x[0])))
+
     # last cash receipt per customer (same-day receipts summed)
     by_day = {}
     for d, c, amt, *_ in receipts:
@@ -219,6 +241,11 @@ def build_sample():
         c = f"CUST{rnd.randint(1, 10):03d}"
         receipts.append([(today - dt.timedelta(days=rnd.randint(0, 300))).isoformat(), c, round(rnd.uniform(100, 25000), 2),
                          str(rnd.randint(10000, 99999)), rnd.choice(["eft", "printedCheck"]), str(1000 + k)])
+        amt, parts, n = receipts[-1][2], [], rnd.choice([1, 1, 2, 3])
+        for j in range(n):  # sample invoice links; the last receipt part may stay unapplied
+            v = round(amt / n, 2) if j < n - 1 else round(amt - sum(p[2] for p in parts) - (50 if k % 9 == 0 else 0), 2)
+            parts.append([f"I{8000 + k * 3 + j}", (today - dt.timedelta(days=rnd.randint(20, 330))).isoformat(), v])
+        receipts[-1].append(parts)
     receipts.sort(reverse=True)
     for d, c, amt, *_ in receipts:
         if c not in last_pay or d > last_pay[c][0]:
@@ -279,12 +306,16 @@ def main():
             snap = assemble("live", items, names, divs, last_pay, check, tz, addrs=addrs,
                             entities=(bundle or {}).get("entities"), receipts=receipts)
             if receipts:
+                # counts only: this repo's Actions logs are public, so no dollar amounts are printed
                 today = dt.datetime.now(tz).date()
                 m0 = today.strftime("%Y-%m")
                 m1 = (today.replace(day=1) - dt.timedelta(days=1)).strftime("%Y-%m")
-                tot = lambda m: (sum(1 for r in receipts if r[0][:7] == m), round(sum(r[2] for r in receipts if r[0][:7] == m), 2))
-                print(f"[receipts] {len(receipts)} cash receipts since {receipts[-1][0]}; "
-                      f"{m0}: {tot(m0)[0]} totaling {tot(m0)[1]:,.2f}; {m1}: {tot(m1)[0]} totaling {tot(m1)[1]:,.2f}")
+                cnt = lambda m: sum(1 for r in receipts if r[0][:7] == m)
+                linked = [r for r in receipts if len(r) > 6]
+                full = sum(1 for r in linked if abs(sum(x[2] for x in r[6]) - r[2]) < 0.005)
+                part = sum(1 for r in linked if r[6] and abs(sum(x[2] for x in r[6]) - r[2]) >= 0.005)
+                print(f"[receipts] {len(receipts)} cash receipts since {receipts[-1][0]}; {m0}: {cnt(m0)}; {m1}: {cnt(m1)}; "
+                      f"invoice links: {full} fully applied, {part} partly applied, {len(receipts) - full - part} unapplied/not linked")
         elif bundle:
             snap = bundle["snapshot"]
             for c, info in snap["customers"].items():  # apply any division overrides
@@ -302,10 +333,11 @@ def main():
     json.dump(encrypt_for_viewers(snap, password), open(args.out, "w"))
 
     unassigned = sorted(c for c, i in snap["customers"].items() if i["div"] == "Unassigned")
-    print(f"[{snap['mode']}] {len(snap['items'])} open items, net AR {snap['total']:,.2f} - "
-          f"{'ties' if snap['check']['ties'] else 'DOES NOT TIE'} to Sage customer balances {snap['check']['customerBalances']:,.2f}")
+    # no dollar amounts or customer names here: Actions logs on a public repo are public
+    print(f"[{snap['mode']}] {len(snap['items'])} open items across {len(snap['customers'])} customers - net AR "
+          f"{'ties' if snap['check']['ties'] else 'DOES NOT TIE'} to Sage customer balances")
     if unassigned:
-        print("::warning::Customers with no division (shown as Unassigned): " + ", ".join(unassigned))
+        print(f"::warning::{len(unassigned)} customer(s) have no division and show as Unassigned on the dashboard")
 
 
 if __name__ == "__main__":
