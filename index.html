@@ -8,17 +8,17 @@
 <link rel="icon" href="logo.png">
 <style>
 :root{
-  --brand:#1597f9;--brand-ink:#0b6fc0;--brand-soft:#e6f3fe;--navy:#0c2340;
+  --brand:#0d70b6;--brand-ink:#0a5a93;--brand-soft:#e7f0f8;--logo-filter:none;--navy:#0c2340;
   --bg:#f4f7fb;--surface:#fff;--surface-2:#eef2f7;--border:#dde4ec;--text:#14202e;--muted:#5b6878;
   --b0:#2f9e6b;--b1:#d4a72c;--b2:#e47c35;--b3:#d6453a;--b4:#8f1f2c;--credit:#5b6878;
   --shadow:0 1px 2px rgba(12,35,64,.05),0 4px 14px rgba(12,35,64,.05);
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --brand:#3aa8fb;--brand-ink:#7cc4ff;--brand-soft:#11324f;--navy:#e8eef5;
+  --brand:#2f8fd6;--brand-ink:#8cc3ec;--brand-soft:#10304a;--logo-filter:brightness(1.9) saturate(.85);--navy:#e8eef5;
   --bg:#0e141b;--surface:#161e27;--surface-2:#1e2833;--border:#2a3644;--text:#e6ecf2;--muted:#94a2b2;
   --b0:#4cbc86;--b1:#e0bb48;--b2:#f09456;--b3:#ee6a5e;--b4:#cf5966;--credit:#94a2b2;--shadow:none}}
 :root[data-theme="dark"]{
-  --brand:#3aa8fb;--brand-ink:#7cc4ff;--brand-soft:#11324f;--navy:#e8eef5;
+  --brand:#2f8fd6;--brand-ink:#8cc3ec;--brand-soft:#10304a;--logo-filter:brightness(1.9) saturate(.85);--navy:#e8eef5;
   --bg:#0e141b;--surface:#161e27;--surface-2:#1e2833;--border:#2a3644;--text:#e6ecf2;--muted:#94a2b2;
   --b0:#4cbc86;--b1:#e0bb48;--b2:#f09456;--b3:#ee6a5e;--b4:#cf5966;--credit:#94a2b2;--shadow:none}
 *{box-sizing:border-box}
@@ -49,7 +49,8 @@ label.chk{display:flex;gap:8px;align-items:center;justify-content:center;color:v
 .topbar{background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5}
 .topbar .wrap{display:flex;align-items:center;gap:16px;min-height:64px;flex-wrap:wrap;padding-top:8px;padding-bottom:8px}
 .brand{display:flex;align-items:center;gap:14px;min-width:0}
-.brand img{height:34px;width:auto}
+.brand img{height:40px;width:auto;filter:var(--logo-filter)}
+.lockcard img{filter:var(--logo-filter)}
 .brand .t{border-left:1px solid var(--border);padding-left:14px}
 .brand h1{font-size:17px;margin:0;color:var(--navy);font-weight:650}
 .brand .sub{font-size:12px;color:var(--muted)}
@@ -133,7 +134,7 @@ table{border-collapse:collapse;width:100%}
 #drawer.open{transform:none}
 #drawer:not(.open){visibility:hidden}
 html,body{overflow-x:clip}
-@media (max-width:600px){.kpis{grid-template-columns:repeat(2,1fr)}.kpi .value{font-size:20px}.brand img{height:28px}.tab{min-width:130px;padding:8px 14px}.dstats{grid-template-columns:1fr}}
+@media (max-width:600px){.kpis{grid-template-columns:repeat(2,1fr)}.kpi .value{font-size:20px}.brand img{height:32px}.tab{min-width:130px;padding:8px 14px}.dstats{grid-template-columns:1fr}}
 .dh{padding:18px 20px 14px;border-bottom:1px solid var(--border);display:flex;gap:12px;align-items:flex-start}
 .dh h3{margin:0 0 4px;font-size:19px;color:var(--navy)}
 .dclose{margin-left:auto;border:1px solid var(--border);background:var(--surface);border-radius:9px;width:36px;height:36px;cursor:pointer;font-size:18px;line-height:1}
@@ -755,7 +756,8 @@ tr.rdetail .inner{padding:10px 14px 14px 30px}
     const total = bk.reduce((s, v) => s + v, 0);
 
     // header: logo, company address, statement label and date
-    const lw = 150, lh = lw * logo.h / logo.w;
+    let lw = 150, lh = lw * logo.h / logo.w;
+    if (lh > 52) { lh = 52; lw = lh * logo.w / logo.h; }  // cap height so taller logos don't push the address down
     doc.addImage(logo.url, "PNG", 22, 24, lw, lh);
     font("normal", 8.5); ink();
     ent.address.forEach((l, k) => doc.text(l, 24, 24 + lh + 14 + k * 11));
